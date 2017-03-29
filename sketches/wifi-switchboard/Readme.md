@@ -9,7 +9,7 @@ Wifi enabled switchboard with 3 sockets that can be controlled individually from
 * 1 X Node MCU v1.0 board
 * 2x 2 Channel 5v relays
 * Microcontroller wires (Jumper cables if you use bread board or else different wires)
-* 1 x 170 Tie bread board (optional)
+* 1 x 170 Tie bread board (I use this cause my node mcu sits on this. makes it easier for me to use jumper wires)
 * 1 x Perf board to serve as a hub for redistributing +5v to relays.
 * Mains wires for connecting switchboard switches and sockets (Handling upto 5-6 Amps)
 + Fuse (5 - 6 Amps)
