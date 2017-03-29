@@ -33,7 +33,7 @@ Wifi enabled switchboard with 3 sockets that can be controlled individually from
 ![Wifi switch board](IMG_20170325_010026.jpg?raw=true "Completed switch board from outside")
 
 
-![Wifi switch board](IMG_20170325_221833.jpg.jpg?raw=true "Completed switch board from inside")
+![Wifi switch board](IMG_20170325_221833.jpg?raw=true "Completed switch board from inside")
 
 
 
