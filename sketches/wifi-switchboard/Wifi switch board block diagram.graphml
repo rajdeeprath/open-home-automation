@@ -15,7 +15,6 @@
   <graph edgedefault="directed" id="G">
     <data key="d0"/>
     <node id="n0">
-      <data key="d5"/>
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="175.41537478899085" width="114.66788990825694" x="-742.6159174311927" y="475.0663532110091"/>
@@ -93,23 +92,6 @@
     <node id="n5">
       <data key="d6">
         <y:ShapeNode>
-          <y:Geometry height="59.0" width="329.0" x="585.5232" y="550.9386000000002"/>
-          <y:Fill color="#FFCC00" transparent="false"/>
-          <y:BorderStyle color="#000000" raised="false" type="line" width="1.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="18" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="26.0517578125" horizontalTextPosition="center" iconTextGap="4" modelName="custom" textColor="#000000" verticalTextPosition="bottom" visible="true" width="275.072265625" x="26.9638671875" y="16.47412109375">3.3V =&gt; 5V DC-DC CONVERTER<y:LabelModel>
-              <y:SmartNodeLabelModel distance="4.0"/>
-            </y:LabelModel>
-            <y:ModelParameter>
-              <y:SmartNodeLabelModelParameter labelRatioX="0.0" labelRatioY="0.0" nodeRatioX="0.0" nodeRatioY="0.0" offsetX="0.0" offsetY="0.0" upX="0.0" upY="-1.0"/>
-            </y:ModelParameter>
-          </y:NodeLabel>
-          <y:Shape type="rectangle"/>
-        </y:ShapeNode>
-      </data>
-    </node>
-    <node id="n6">
-      <data key="d6">
-        <y:ShapeNode>
           <y:Geometry height="22.0" width="270.0232" x="644.5" y="438.1999999999998"/>
           <y:Fill color="#FF0000" transparent="false"/>
           <y:BorderStyle color="#000000" raised="false" type="line" width="1.0"/>
@@ -124,7 +106,7 @@
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n7">
+    <node id="n6">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="22.0" width="270.0232" x="644.5" y="476.99999999999966"/>
@@ -141,7 +123,7 @@
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n8">
+    <node id="n7">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="178.75" width="256.25" x="-426.533333333333" y="471.731728"/>
@@ -163,8 +145,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n9">
-      <data key="d5"/>
+    <node id="n8">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="234.63080733944958" width="650.6511318042818" x="170.59877247706459" y="-278.0653256880734"/>
@@ -182,8 +163,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n10">
-      <data key="d5"/>
+    <node id="n9">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="30.0" width="30.0" x="-703.1924311926607" y="505.0663532110091"/>
@@ -201,8 +181,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n11">
-      <data key="d5"/>
+    <node id="n10">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="30.0" width="30.0" x="-703.1924311926607" y="591.5056422018348"/>
@@ -220,8 +199,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n12">
-      <data key="d5"/>
+    <node id="n11">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="153.8967889908257" width="66.80387729700125" x="245.85063095987982" y="-230.92488532110093"/>
@@ -232,20 +210,18 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ImageNode>
       </data>
     </node>
-    <node id="n13">
-      <data key="d5"/>
+    <node id="n12">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="146.82226788990815" width="61.58378458715591" x="342.65450825688106" y="-227.38762477064216"/>
           <y:Fill color="#CCCCFF" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.79189229357796" y="150.82226788990815"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.791892293577973" y="150.82226788990815"/>
           <y:Image alphaImage="true" refid="4"/>
         </y:ImageNode>
       </data>
     </node>
-    <node id="n14">
-      <data key="d5"/>
+    <node id="n13">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="153.8967889908257" width="66.80387729700125" x="442.8961227029988" y="-230.92488532110093"/>
@@ -256,44 +232,40 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ImageNode>
       </data>
     </node>
-    <node id="n15">
-      <data key="d5"/>
+    <node id="n14">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="146.82226788990815" width="61.58378458715591" x="539.7" y="-227.38762477064216"/>
           <y:Fill color="#CCCCFF" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.79189229357796" y="150.82226788990815"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.791892293577916" y="150.82226788990815"/>
           <y:Image alphaImage="true" refid="4"/>
         </y:ImageNode>
       </data>
     </node>
-    <node id="n16">
-      <data key="d5"/>
+    <node id="n15">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="153.8967889908257" width="66.80387729700125" x="631.2837845871559" y="-230.92488532110093"/>
           <y:Fill color="#CCCCFF" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="31.401938648500625" y="157.8967889908257"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="31.401938648500618" y="157.8967889908257"/>
           <y:Image alphaImage="true" refid="3"/>
         </y:ImageNode>
       </data>
     </node>
-    <node id="n17">
-      <data key="d5"/>
+    <node id="n16">
       <data key="d6">
         <y:ImageNode>
           <y:Geometry height="146.82226788990815" width="61.58378458715591" x="728.0876618841571" y="-227.38762477064216"/>
           <y:Fill color="#CCCCFF" transparent="false"/>
           <y:BorderStyle color="#000000" type="line" width="1.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.79189229357796" y="150.82226788990815"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" hasText="false" height="4.0" horizontalTextPosition="center" iconTextGap="4" modelName="sandwich" modelPosition="s" textColor="#000000" verticalTextPosition="bottom" visible="true" width="4.0" x="28.791892293577916" y="150.82226788990815"/>
           <y:Image alphaImage="true" refid="4"/>
         </y:ImageNode>
       </data>
     </node>
-    <node id="n18">
-      <data key="d5"/>
+    <node id="n17">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="56.00997577981653" width="16.56151251376147" x="170.59877247706459" y="-123.93317339449541"/>
@@ -310,8 +282,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <node id="n19">
-      <data key="d5"/>
+    <node id="n18">
       <data key="d6">
         <y:ShapeNode>
           <y:Geometry height="16.128012917431192" width="14.394014532110077" x="170.59877247706459" y="-165.1156350458715"/>
@@ -329,85 +300,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:ShapeNode>
       </data>
     </node>
-    <edge id="e0" source="n3" target="n5">
-      <data key="d10">
-        <y:PolyLineEdge>
-          <y:Path sx="115.94062500000001" sy="165.86249999999995" tx="-153.53391999999963" ty="22.423899999999776"/>
-          <y:LineStyle color="#000000" type="line" width="1.0"/>
-          <y:Arrows source="none" target="standard"/>
-          <y:EdgeLabel alignment="center" configuration="AutoFlippingLabel" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.701171875" horizontalTextPosition="center" iconTextGap="4" modelName="custom" preferredPlacement="anywhere" ratio="0.5" textColor="#000000" verticalTextPosition="bottom" visible="true" width="11.0078125" x="346.4904493652343" y="4.265426269531417">+<y:LabelModel>
-              <y:SmartEdgeLabelModel autoRotationEnabled="false" defaultAngle="0.0" defaultDistance="10.0"/>
-            </y:LabelModel>
-            <y:ModelParameter>
-              <y:SmartEdgeLabelModelParameter angle="6.283185307179586" distance="13.616000000000207" distanceToCenter="true" position="right" ratio="8.796259374999977" segment="-1"/>
-            </y:ModelParameter>
-            <y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/>
-          </y:EdgeLabel>
-          <y:BendStyle smoothed="false"/>
-        </y:PolyLineEdge>
-      </data>
-    </edge>
-    <edge id="e1" source="n3" target="n5">
-      <data key="d10">
-        <y:PolyLineEdge>
-          <y:Path sx="111.37702400000006" sy="137.4117759999997" tx="-156.52534400000002" ty="-6.026824000000488"/>
-          <y:LineStyle color="#000000" type="line" width="1.0"/>
-          <y:Arrows source="none" target="standard"/>
-          <y:EdgeLabel alignment="center" configuration="AutoFlippingLabel" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.701171875" horizontalTextPosition="center" iconTextGap="4" modelName="custom" preferredPlacement="anywhere" ratio="0.5" textColor="#000000" verticalTextPosition="bottom" visible="true" width="7.99609375" x="338.78378635745594" y="-22.358614136719098">-<y:LabelModel>
-              <y:SmartEdgeLabelModel autoRotationEnabled="false" defaultAngle="0.0" defaultDistance="10.0"/>
-            </y:LabelModel>
-            <y:ModelParameter>
-              <y:SmartEdgeLabelModelParameter angle="6.283185307179586" distance="13.008000000000084" distanceToCenter="true" position="left" ratio="0.9939567876247101" segment="-1"/>
-            </y:ModelParameter>
-            <y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/>
-          </y:EdgeLabel>
-          <y:BendStyle smoothed="false"/>
-        </y:PolyLineEdge>
-      </data>
-    </edge>
-    <edge id="e2" source="n5" target="n7">
-      <data key="d10">
-        <y:PolyLineEdge>
-          <y:Path sx="164.50657560312663" sy="-11.08865099164484" tx="0.0" ty="0.0">
-            <y:Point x="966.4999999999999" y="569.3499490083553"/>
-            <y:Point x="966.4999999999999" y="487.99999999999966"/>
-          </y:Path>
-          <y:LineStyle color="#000000" type="line" width="1.0"/>
-          <y:Arrows source="none" target="standard"/>
-          <y:EdgeLabel alignment="center" configuration="AutoFlippingLabel" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.701171875" horizontalTextPosition="center" iconTextGap="4" modelName="custom" preferredPlacement="anywhere" ratio="0.5" textColor="#000000" verticalTextPosition="bottom" visible="true" width="7.99609375" x="2.418791406249966" y="-19.79861251508214">-<y:LabelModel>
-              <y:SmartEdgeLabelModel autoRotationEnabled="false" defaultAngle="0.0" defaultDistance="10.0"/>
-            </y:LabelModel>
-            <y:ModelParameter>
-              <y:SmartEdgeLabelModelParameter angle="6.283185307179586" distance="10.447999999999979" distanceToCenter="true" position="left" ratio="-2.5746234375000085" segment="0"/>
-            </y:ModelParameter>
-            <y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/>
-          </y:EdgeLabel>
-          <y:BendStyle smoothed="false"/>
-        </y:PolyLineEdge>
-      </data>
-    </edge>
-    <edge id="e3" source="n5" target="n6">
-      <data key="d10">
-        <y:PolyLineEdge>
-          <y:Path sx="164.5009630984723" sy="25.070318911012578" tx="0.0" ty="0.0">
-            <y:Point x="994.1800000000001" y="605.5089189110128"/>
-            <y:Point x="994.1800000000001" y="449.1999999999998"/>
-          </y:Path>
-          <y:LineStyle color="#000000" type="line" width="1.0"/>
-          <y:Arrows source="none" target="standard"/>
-          <y:EdgeLabel alignment="center" configuration="AutoFlippingLabel" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.701171875" horizontalTextPosition="center" iconTextGap="4" modelName="custom" preferredPlacement="anywhere" ratio="0.5" textColor="#000000" verticalTextPosition="bottom" visible="true" width="11.0078125" x="-0.2438499218750394" y="-2.7878901592997636">+<y:LabelModel>
-              <y:SmartEdgeLabelModel autoRotationEnabled="false" defaultAngle="0.0" defaultDistance="10.0"/>
-            </y:LabelModel>
-            <y:ModelParameter>
-              <y:SmartEdgeLabelModelParameter angle="6.283185307179586" distance="6.56268799999998" distanceToCenter="true" position="right" ratio="-5.242880000000014" segment="0"/>
-            </y:ModelParameter>
-            <y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/>
-          </y:EdgeLabel>
-          <y:BendStyle smoothed="false"/>
-        </y:PolyLineEdge>
-      </data>
-    </edge>
-    <edge id="e4" source="n6" target="n2">
+    <edge id="e0" source="n5" target="n2">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-71.50521600000025" sy="-11.005049999999699" tx="61.30638399999975" ty="123.11867007672632"/>
@@ -417,7 +310,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e5" source="n7" target="n2">
+    <edge id="e1" source="n6" target="n2">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-135.01160000000004" sy="0.0" tx="12.543183999999655" ty="123.16987007672643">
@@ -431,7 +324,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e6" source="n6" target="n4">
+    <edge id="e2" source="n5" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-135.01160000000004" sy="0.0" tx="61.13515199999978" ty="121.7976460767263">
@@ -443,7 +336,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e7" source="n7" target="n4">
+    <edge id="e3" source="n6" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-135.0373044926714" sy="7.093411283875298" tx="9.191333333333318" ty="123.06867007672602">
@@ -455,7 +348,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e8" source="n3" target="n4">
+    <edge id="e4" source="n3" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="112.38666666666663" sy="17.76800000000003" tx="29.10199999999992" ty="131.7346700767263">
@@ -467,7 +360,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e9" source="n3" target="n4">
+    <edge id="e5" source="n3" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="112.96106666666662" sy="42.039999999999964" tx="47.07358399999987" ty="127.50439807672623">
@@ -479,7 +372,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e10" source="n3" target="n2">
+    <edge id="e6" source="n3" target="n2">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="111.3794986666666" sy="-102.12721066666677" tx="32.00814719999994" ty="121.9382967433929">
@@ -491,7 +384,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e11" source="n8" target="n3">
+    <edge id="e7" source="n7" target="n3">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="128.12519456000007" sy="39.55834400000015" tx="-102.94345066666642" ty="163.66507200000012"/>
@@ -509,7 +402,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e12" source="n8" target="n3">
+    <edge id="e8" source="n7" target="n3">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="120.55365664000004" sy="14.226713920000293" tx="-99.76561002666637" ty="138.33344192000027"/>
@@ -527,8 +420,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e13" source="n10" target="n8">
-      <data key="d9"/>
+    <edge id="e9" source="n9" target="n7">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="0.0" tx="-128.09185611620802" ty="-41.0403747889909"/>
@@ -546,8 +438,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e14" source="n11" target="n8">
-      <data key="d9"/>
+    <edge id="e10" source="n10" target="n7">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="0.0" tx="-119.15377125382281" ty="45.39891420183483"/>
@@ -565,8 +456,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e15" source="n0" target="n9">
-      <data key="d9"/>
+    <edge id="e11" source="n0" target="n8">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="70.19485435779836" sy="-43.76112317431193" tx="-325.3044307261815" ty="3.5595139459793756">
@@ -586,8 +476,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e16" source="n0" target="n9">
-      <data key="d9"/>
+    <edge id="e12" source="n0" target="n8">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="99.47142316513748" sy="42.306546550458734" tx="-325.3044307261815" ty="38.556458715596335">
@@ -607,8 +496,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e17" source="n19" target="n13">
-      <data key="d9"/>
+    <edge id="e13" source="n18" target="n12">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="0.0" tx="1.5618484791458087" ty="-19.135226400000022">
@@ -621,8 +509,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e18" source="n13" target="n15">
-      <data key="d9"/>
+    <edge id="e14" source="n12" target="n14">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.8682491250173854" sy="-20.869224785321137" tx="1.1517736314396103" ty="-20.869224785321137">
@@ -635,8 +522,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e19" source="n15" target="n17">
-      <data key="d9"/>
+    <edge id="e15" source="n14" target="n16">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.2403793415314226" sy="-19.392759840187836" tx="-1.2222566050110686" ty="-19.392759840187836">
@@ -649,8 +535,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e20" source="n18" target="n12">
-      <data key="d9"/>
+    <edge id="e16" source="n17" target="n11">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="0.0" tx="0.0" ty="0.0">
@@ -665,8 +550,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e21" source="n12" target="n14">
-      <data key="d9"/>
+    <edge id="e17" source="n11" target="n13">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-1.544140662445301" sy="-58.083253627596406" tx="-0.4976568664817833" ty="-58.083253627596406">
@@ -679,8 +563,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e22" source="n14" target="n16">
-      <data key="d9"/>
+    <edge id="e18" source="n13" target="n15">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="0.0" sy="-54.885335567380196" tx="0.0" ty="0.0">
@@ -693,8 +576,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e23" source="n12" target="n4">
-      <data key="d9"/>
+    <edge id="e19" source="n11" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-1.7482959937016744" sy="57.63755211009166" tx="-46.665549651376466" ty="-110.2211301623532">
@@ -709,8 +591,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e24" source="n4" target="n13">
-      <data key="d9"/>
+    <edge id="e20" source="n4" target="n12">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-16.754077504587485" sy="-109.35413096969265" tx="0.0" ty="26.851092631192643">
@@ -723,8 +604,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e25" source="n14" target="n4">
-      <data key="d9"/>
+    <edge id="e21" source="n13" target="n4">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-2.2097883239767953" sy="62.418724954128436" tx="39.600870018348246" ty="-108.48713177703209">
@@ -737,8 +617,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e26" source="n4" target="n15">
-      <data key="d9"/>
+    <edge id="e22" source="n4" target="n14">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="70.37934135779778" sy="-111.95512854767429" tx="2.759413394495141" ty="20.017045688073438">
@@ -751,8 +630,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e27" source="n16" target="n2">
-      <data key="d9"/>
+    <edge id="e23" source="n15" target="n2">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-1.0671984650145987" sy="59.32933633027517" tx="-46.71911544954139" ty="-108.92063137336237">
@@ -765,8 +643,7 @@ OUTPUT =&gt; 5V DC 1AMP
         </y:PolyLineEdge>
       </data>
     </edge>
-    <edge id="e28" source="n2" target="n17">
-      <data key="d9"/>
+    <edge id="e24" source="n2" target="n16">
       <data key="d10">
         <y:PolyLineEdge>
           <y:Path sx="-17.24114289908266" sy="-111.95512854767429" tx="1.09102930850338" ty="22.48187064220187">
@@ -774,6 +651,36 @@ OUTPUT =&gt; 5V DC 1AMP
             <y:Point x="759.9705834862384" y="1.264631192660545"/>
           </y:Path>
           <y:LineStyle color="#FF0000" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e25" source="n7" target="n1">
+      <data key="d9"/>
+      <data key="d10">
+        <y:PolyLineEdge>
+          <y:Path sx="171.3951223241587" sy="40.09033622018353" tx="128.70356829357786" ty="-13.273926605504585">
+            <y:Point x="-127.01321100917431" y="677.3233027522937"/>
+            <y:Point x="1039.2998165137615" y="669.5816513761469"/>
+            <y:Point x="1039.2998165137615" y="455.3260733944952"/>
+          </y:Path>
+          <y:LineStyle color="#FF0000" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e26" source="n7" target="n1">
+      <data key="d9"/>
+      <data key="d10">
+        <y:PolyLineEdge>
+          <y:Path sx="199.7841131498468" sy="14.28483163302758" tx="120.44580682568801" ty="15.628238532110117">
+            <y:Point x="-98.62422018348622" y="719.0422018348623"/>
+            <y:Point x="1116.3849541284405" y="706.1394495412844"/>
+            <y:Point x="1116.3849541284405" y="484.2282385321099"/>
+          </y:Path>
+          <y:LineStyle color="#000000" type="line" width="1.0"/>
           <y:Arrows source="none" target="standard"/>
           <y:BendStyle smoothed="false"/>
         </y:PolyLineEdge>
