@@ -23,7 +23,7 @@ Wifi enabled switchboard with 3 sockets that can be controlled individually from
 ##  BLOCK DIAGRAM
 
 
-![Wifi switch board block diagram](Wifi switch board block diagram.jpg?raw=true "Block diagram")
+![Wifi switch board block diagram](Wifi%20switch%20board%20block%20diagram.jpg?raw=true "Block diagram")
 
 
 
