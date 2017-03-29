@@ -13,7 +13,6 @@ Wifi enabled switchboard with 3 sockets that can be controlled individually from
 * 1 x Perf board to serve as a hub for redistributing +5v to relays.
 * Mains wires for connecting switchboard switches and sockets (Handling upto 5-6 Amps)
 + Fuse (5 - 6 Amps)
-* 1 x 3.3V DC to 5V DC Regulator (You dont need thsi if you use the 5V from SMPS output)
 * 1 x SMPS AC to DC 5V (to power Node MCU via VIN)
 * 1 x 6 slot nano box for switchboard base
 * 3 x Electric Switches
@@ -23,6 +22,8 @@ Wifi enabled switchboard with 3 sockets that can be controlled individually from
 
 ##  BLOCK DIAGRAM
 
+
+![Wifi switch board block diagram](Wifi switch board block diagram.jpg?raw=true "Block diagram")
 
 
 
