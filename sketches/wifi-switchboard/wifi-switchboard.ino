@@ -7,8 +7,8 @@
 
 const String NAME="HMU-SB-001";
 
-const int RELAY1=0;
-const int RELAY2=12;
+const int RELAY1=4;
+const int RELAY2=5;
 const int RELAY3=13;
 
 boolean resetFlag=false;
@@ -122,13 +122,13 @@ void toggleSwitchC()
   if(conf.relay_3 == 0)
   {
     conf.relay_3=1;
-    digitalWrite(RELAY3, HIGH);
+    digitalWrite(RELAY3, LOW);
     switch3state="STATE=ON";
   }
   else
   {
     conf.relay_3=0;
-    digitalWrite(RELAY3, LOW);
+    digitalWrite(RELAY3, HIGH);
     switch3state="STATE=OFF";
   }
 
@@ -142,7 +142,7 @@ void toggleSwitchC()
 void switchCOn()
 {
   conf.relay_3=1;
-  digitalWrite(RELAY3, HIGH);
+  digitalWrite(RELAY3, LOW);
 
   server->send(200, "text/plain", "STATE=ON");
   writeSettings();
@@ -154,7 +154,7 @@ void switchCOn()
 void switchCOff()
 {
   conf.relay_3=0;
-  digitalWrite(RELAY3, LOW);
+  digitalWrite(RELAY3, HIGH);
 
   server->send(200, "text/plain", "STATE=OFF");
   writeSettings();
@@ -187,13 +187,13 @@ void toggleSwitchB()
   if(conf.relay_2 == 0)
   {
     conf.relay_2=1;
-    digitalWrite(RELAY2, HIGH);
+    digitalWrite(RELAY2, LOW);
     switch2state="STATE=ON";
   }
   else
   {
     conf.relay_2=0;
-    digitalWrite(RELAY2, LOW);
+    digitalWrite(RELAY2, HIGH);
     switch2state="STATE=OFF";
   }
 
@@ -207,7 +207,7 @@ void toggleSwitchB()
 void switchBOn()
 {
   conf.relay_2=1;
-  digitalWrite(RELAY2, HIGH);
+  digitalWrite(RELAY2, LOW);
 
   server->send(200, "text/plain", "STATE=ON");
   writeSettings();
@@ -219,7 +219,7 @@ void switchBOn()
 void switchBOff()
 {
   conf.relay_2=0;
-  digitalWrite(RELAY2, LOW);
+  digitalWrite(RELAY2, HIGH);
 
   server->send(200, "text/plain", "STATE=OFF");
   writeSettings();
@@ -252,13 +252,13 @@ void toggleSwitchA()
   if(conf.relay_1 == 0)
   {
     conf.relay_1=1;
-    digitalWrite(RELAY1, HIGH);
+    digitalWrite(RELAY1, LOW);
     switch1state="STATE=ON";
   }
   else
   {
     conf.relay_1=0;
-    digitalWrite(RELAY1, LOW);
+    digitalWrite(RELAY1, HIGH);
     switch1state="STATE=OFF";
   }
 
@@ -272,7 +272,7 @@ void toggleSwitchA()
 void switchAOn()
 {
   conf.relay_1=1;
-  digitalWrite(RELAY1, HIGH);
+  digitalWrite(RELAY1, LOW);
 
   server->send(200, "text/plain", "STATE=ON");
   writeSettings();
@@ -284,7 +284,7 @@ void switchAOn()
 void switchAOff()
 {
   conf.relay_1=0;
-  digitalWrite(RELAY1, LOW);
+  digitalWrite(RELAY1, HIGH);
 
   server->send(200, "text/plain", "STATE=OFF");
   writeSettings();
@@ -298,31 +298,31 @@ void restoreSystem()
 
   if(conf.relay_1 == 0)
   {
-    digitalWrite(RELAY1, LOW);
+    digitalWrite(RELAY1, HIGH);
   }
   else
   {
-    digitalWrite(RELAY1, HIGH);
+    digitalWrite(RELAY1, LOW);
   }
 
 
   if(conf.relay_2 == 0)
   {
-    digitalWrite(RELAY2, LOW);
+    digitalWrite(RELAY2, HIGH);
   }
   else
   {
-    digitalWrite(RELAY2, HIGH);
+    digitalWrite(RELAY2, LOW);
   }
 
 
   if(conf.relay_3 == 0)
   {
-    digitalWrite(RELAY3, LOW);
+    digitalWrite(RELAY3, HIGH);
   }
   else
   {
-    digitalWrite(RELAY3, HIGH);
+    digitalWrite(RELAY3, LOW);
   }
 }
 
@@ -331,8 +331,13 @@ void restoreSystem()
 void setup() {
 
   pinMode(RELAY1, OUTPUT);
+  digitalWrite(RELAY1, HIGH);
+  
   pinMode(RELAY2, OUTPUT);
+  digitalWrite(RELAY2, HIGH);
+  
   pinMode(RELAY3, OUTPUT);
+  digitalWrite(RELAY3, HIGH);
 
   conf.relay_1 = 0;
   conf.relay_2 = 0;
