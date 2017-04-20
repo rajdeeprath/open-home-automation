@@ -11,10 +11,11 @@ const int RELAY1=4;
 const int LIQUID_LEVEL_SENSOR=A0;
 const int BEEPER=13;
 const int LED=16;
-
+int DEFAULT_RUNTIME = 10;
+long max_runtime;
 boolean resetFlag=false;
 boolean debug=true;
-
+boolean timeover;
 int eeAddress = 0;
 int liquidLevelSensorReadIn = 0;
 int liquidLevelSensorReadInThreshold = 950;
@@ -29,6 +30,8 @@ struct Settings {
    int relay_runtime;
    int led;
    int lastupdate;
+   long relay_start;
+   long relay_stop;
 };
 
 Settings conf = {};
@@ -191,6 +194,7 @@ void switchAOff()
 void relayOn()
 {
   conf.relay_1=1;
+  conf.relay_start = millis();
   digitalWrite(RELAY1, LOW);
 }
 
@@ -198,6 +202,7 @@ void relayOn()
 void relayOff()
 {
   conf.relay_1=0;
+  conf.relay_stop = millis();
   digitalWrite(RELAY1, HIGH);
 }
 
@@ -213,13 +218,6 @@ void ledOff()
 {
   conf.led=0;
   digitalWrite(LED, LOW); 
-}
-
-
-
-void restoreSystem()
-{
-  readSettings();
 }
 
 
@@ -259,9 +257,15 @@ void relayConditionSafeGuard()
 
   /****************************************************************/
 
-  if(!LIQUID_LEVEL_OK && conf.relay_1 == 1)
+  if(conf.relay_1 == 1)
   {
-    relayOff();
+    max_runtime = conf.relay_runtime * 1000;
+    timeover = ((millis() - conf.relay_start) > max_runtime);
+    
+    if(!LIQUID_LEVEL_OK || timeover)
+    {
+      relayOff();
+    }
   }
 }
 
@@ -283,14 +287,15 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
 
+  // start eeprom
   EEPROM.begin(512);
-  restoreSystem();
+  initSettings();
   
   WiFiManager wifiManager;
   wifiManager.autoConnect();
 
   //if you get here you have connected to the WiFi
-  Serial.println("connected...yeey :)");
+  debugPrint("connected...yeey :)");
   
   server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
 
@@ -302,17 +307,15 @@ void setup() {
   server->on("/switch/1/set", toggleSwitchA);
   server->on("/switch/1/set/on", switchAOn);
   server->on("/switch/1/set/off", switchAOff);
-
   server->on("/switch/1/runtime", getSwitchRuntime);
   server->on("/switch/1/runtime/set", setSwitchRuntime);
-
   server->on("/switch/all", readAllSwitches);
   
   server->onNotFound(handleNotFound);
-
   server->begin();
-  Serial.println("HTTP server started");
-  Serial.println(WiFi.localIP());
+  
+  debugPrint("HTTP server started");
+  debugPrint(String(WiFi.localIP()));
 }
 
 void loop() 
@@ -332,10 +335,25 @@ void loop()
     else
     {
       relayConditionSafeGuard();
-      delay(3);
+      delay(5);
       
       server->handleClient();
     }
+}
+
+
+
+
+
+void initSettings()
+{
+  readSettings();
+
+  if(conf.relay_runtime <= 0)
+  {
+    conf.relay_runtime = DEFAULT_RUNTIME;
+    writeSettings();
+  }
 }
 
 
