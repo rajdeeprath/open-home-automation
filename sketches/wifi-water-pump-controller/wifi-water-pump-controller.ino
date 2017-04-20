@@ -26,8 +26,9 @@ String capailities = "{\"name\":\"HMU-PC-001\",\"devices\":{\"SWITCH1\":{\"get\"
 
 struct Settings {
    int relay_1;
+   int relay_runtime;
    int led;
-   long timestamp;
+   int lastupdate;
 };
 
 Settings conf = {};
@@ -78,6 +79,54 @@ void readAllSwitches()
 }
 
 
+void getSwitchRuntime()
+{
+  int runtime;
+
+  readSettings();
+
+  runtime = conf.relay_runtime;
+
+  if(runtime > 0)
+  {
+    server->send(200, "text/plain", "RUNTIME=" + String(runtime));
+  }
+  else
+  {
+    server->send(400, "text/plain", "Invalid runtime value");
+  }
+}
+
+
+
+
+void setSwitchRuntime()
+{
+  int runtime;
+
+  if(server->hasArg("time"))
+  {
+    runtime = String(server->arg("time")).toInt();
+
+    if(runtime > 0)
+    {
+      conf.relay_runtime = runtime;
+      
+      server->send(200, "text/plain", "RUNTIME=" + String(conf.relay_runtime));
+      writeSettings();
+    }
+    else
+    {
+      server->send(400, "text/plain", "Invalid runtime value");
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No value provided");
+  }
+  
+  
+}
 
 
 void readSwitchA()
@@ -254,6 +303,9 @@ void setup() {
   server->on("/switch/1/set/on", switchAOn);
   server->on("/switch/1/set/off", switchAOff);
 
+  server->on("/switch/1/runtime", getSwitchRuntime);
+  server->on("/switch/1/runtime/set", setSwitchRuntime);
+
   server->on("/switch/all", readAllSwitches);
   
   server->onNotFound(handleNotFound);
@@ -304,6 +356,16 @@ void eraseSettings()
 void writeSettings() 
 {
   eeAddress = 0;
+  conf.lastupdate = millis();
+  
+  EEPROM.write(eeAddress, conf.relay_runtime);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.lastupdate);
+  EEPROM.commit();
+  
+  debugPrint("Conf saved");
+  debugPrint(String(conf.relay_runtime));
+  debugPrint(String(conf.lastupdate));
 }
 
 
@@ -312,6 +374,14 @@ void writeSettings()
 void readSettings() 
 {
   eeAddress = 0;
+  
+  conf.relay_runtime = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.lastupdate = EEPROM.read(eeAddress);
+
+  debugPrint("Conf read");
+  debugPrint(String(conf.relay_runtime));
+  debugPrint(String(conf.lastupdate));
 }
 
 
