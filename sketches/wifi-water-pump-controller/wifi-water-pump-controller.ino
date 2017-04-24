@@ -1,4 +1,4 @@
-#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+ #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
@@ -13,6 +13,8 @@ const int BEEPER=13;
 const int LED=16;
 int DEFAULT_RUNTIME = 10;
 long max_runtime;
+long system_start_time;
+long wait_time = 5000;
 boolean resetFlag=false;
 boolean debug=true;
 boolean timeover;
@@ -274,6 +276,8 @@ void relayConditionSafeGuard()
 
 void setup() {
 
+  system_start_time = millis();
+
   conf.relay_1=0;
   conf.led=1;
 
@@ -339,9 +343,12 @@ void loop()
     else
     {
       relayConditionSafeGuard();
-      delay(4);
-      
-      server->handleClient();
+      delay(3);
+
+      if(millis() - system_start_time > wait_time)
+      {
+        server->handleClient();
+      }
     }
 }
 
