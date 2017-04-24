@@ -23,7 +23,7 @@ String switch1state;
 
 boolean LIQUID_LEVEL_OK = false;
 
-String capailities = "{\"name\":\"HMU-PC-001\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capailities = "{\"name\":\"HMU-PC-001\",\"description\":\"WATER PUMP CONTROLLER WITH WATER LEVEL SAFETY\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"runtime\":{\"get\":\"\/switch\/1\/runtime\",\"set\":\"\/switch\/1\/runtime\/set?time={value}\"},\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"sensor1\":{\"index\":1,\"name\":\"LIQUID_LEVEL_SENSOR\",\"get\":\"\/sensor\/1\/get\",\"type\":\"magnetic_float_switch\",\"states\":[\"true\",\"false\"]}},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    int relay_1;
