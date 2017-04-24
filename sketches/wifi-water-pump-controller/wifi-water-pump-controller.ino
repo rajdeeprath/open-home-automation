@@ -21,7 +21,7 @@ int liquidLevelSensorReadIn = 0;
 int liquidLevelSensorReadInThreshold = 950;
 String switch1state;
 
-boolean LIQUID_LEVEL_OK = false;
+boolean LIQUID_LEVEL_OK = true;
 
 String capailities = "{\"name\":\"HMU-PC-001\",\"description\":\"WATER PUMP CONTROLLER WITH WATER LEVEL SAFETY\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"runtime\":{\"get\":\"\/switch\/1\/runtime\",\"set\":\"\/switch\/1\/runtime\/set?time={value}\"},\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"sensor1\":{\"index\":1,\"name\":\"LIQUID_LEVEL_SENSOR\",\"get\":\"\/sensor\/1\/get\",\"type\":\"magnetic_float_switch\",\"states\":[\"true\",\"false\"]}},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -237,6 +237,7 @@ void checkAndRespondToRelayConditionSafeGuard()
 void relayConditionSafeGuard()
 {
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
+  //Serial.println(String(liquidLevelSensorReadIn) + "LIQUID_LEVEL_OK = " + String(LIQUID_LEVEL_OK));
   if(liquidLevelSensorReadIn >= liquidLevelSensorReadInThreshold) // open magnetic switch
   {
     if(LIQUID_LEVEL_OK)
@@ -287,6 +288,9 @@ void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
 
+  // start state
+  LIQUID_LEVEL_OK = true;
+
   // start eeprom
   EEPROM.begin(512);
   initSettings();
@@ -335,7 +339,7 @@ void loop()
     else
     {
       relayConditionSafeGuard();
-      delay(5);
+      delay(4);
       
       server->handleClient();
     }
