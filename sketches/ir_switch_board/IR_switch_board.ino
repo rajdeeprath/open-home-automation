@@ -101,6 +101,8 @@ void readIR()
         toggleRelay(RELAY_1, RELAY_1_ON);
         conf.relay_1 = RELAY_1_ON;
         saveSettings();
+
+        beep();
       }
     }
     else if(code == TWO)
@@ -117,6 +119,8 @@ void readIR()
         toggleRelay(RELAY_2, RELAY_2_ON);
         conf.relay_2 = RELAY_2_ON;
         saveSettings();
+
+        beep();
       }
     }
     else if(code == PROGRAM)
@@ -127,7 +131,9 @@ void readIR()
         if(TIMER_TARGET != 0){
           clearTimer();
         }
+
         PROGMODE = true;
+        beep();
       }
       else
       {
@@ -143,12 +149,14 @@ void readIR()
       if(timer > 0)
       {
         timer = timer - 2; 
+        beep();
         debugPrint(String(timer));
       }
     }
     else if(code == PLUS_ONE)
     {
        timer = timer + 2; 
+       beep();
        debugPrint(String(timer));
     }
     
@@ -162,10 +170,11 @@ void clearTimer()
 {
    // clear timer
    t.stop(timerEvent);
-
+ 
    timer = 0;
    TIMER_TARGET = 0;
 
+   beep();
    debugPrint("Existing timer stopped...");
 }
 
@@ -174,11 +183,11 @@ void startTimer()
 {
   // start timer
   t.stop(timerEvent);
-  delay(10);
   
   timer_time = timer * 60000;
   timerEvent = t.after(timer_time, timerDone);
 
+  beep();
   debugPrint("New timer started...");
 }
 
@@ -194,13 +203,15 @@ void timerDone()
   else if(TIMER_TARGET == RELAY_2)
   {
     toggleRelay(RELAY_2, RELAY_2_ON);
-  }  
+  } 
+
+  beep();
 }
 
 void beep()
 {
   digitalWrite(BEEPER, HIGH);
-  delay(150);
+  delay(100);
   digitalWrite(BEEPER, LOW);
 }
 
