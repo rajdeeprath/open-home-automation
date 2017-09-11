@@ -5,7 +5,7 @@
 #define RELAY_1 5
 #define RELAY_2 6
 #define IR 8
-#define BEEPER 9
+#define BEEPER 3
 
 #define ONE "ff30cf"
 #define TWO "ff18e7"
@@ -39,6 +39,8 @@ long timer_time;
 int TIMER_TARGET;
 int timerEvent;
 
+long lastKeyPress;
+
 Timer t;
 
 void setup() 
@@ -59,6 +61,7 @@ void setup()
   digitalWrite(RELAY_2, HIGH);
   
   pinMode(IR, INPUT);
+  pinMode(BEEPER, OUTPUT);
 
   irrecv.enableIRIn(); // Start the receiver
 
@@ -87,80 +90,86 @@ void readIR()
     debugPrint(code);
     irrecv.resume(); // Receive the next value
 
-    if(code == ONE)
-    {
-      if(PROGMODE)
+    if(millis() - lastKeyPress > 1000)
+    { 
+      if(code == ONE)
       {
-        TIMER_TARGET = RELAY_1;
-        debugPrint(String("Timer target set to ... " + TIMER_TARGET));
-        PROGMODE = false;
-        startTimer(); 
+        if(PROGMODE)
+        {
+          TIMER_TARGET = RELAY_1;
+          debugPrint(String("Timer target set to ... " + TIMER_TARGET));
+          PROGMODE = false;
+          startTimer(); 
+        }
+        else
+        {
+          toggleRelay(RELAY_1, RELAY_1_ON);
+          conf.relay_1 = RELAY_1_ON;
+          saveSettings();
+  
+          beep();
+        }
       }
-      else
+      else if(code == TWO)
       {
-        toggleRelay(RELAY_1, RELAY_1_ON);
-        conf.relay_1 = RELAY_1_ON;
-        saveSettings();
-
-        beep();
+        if(PROGMODE)
+        {
+          TIMER_TARGET = RELAY_2;
+          debugPrint(String("Timer target set to ... " + TIMER_TARGET));
+          PROGMODE = false;
+          startTimer();
+        }
+        else
+        {
+          toggleRelay(RELAY_2, RELAY_2_ON);
+          conf.relay_2 = RELAY_2_ON;
+          saveSettings();
+  
+          beep();
+        }
       }
-    }
-    else if(code == TWO)
-    {
-      if(PROGMODE)
+      else if(code == PROGRAM)
       {
-        TIMER_TARGET = RELAY_2;
-        debugPrint(String("Timer target set to ... " + TIMER_TARGET));
-        PROGMODE = false;
-        startTimer();
-      }
-      else
-      {
-        toggleRelay(RELAY_2, RELAY_2_ON);
-        conf.relay_2 = RELAY_2_ON;
-        saveSettings();
-
-        beep();
-      }
-    }
-    else if(code == PROGRAM)
-    {
-      if(!PROGMODE)
-      {
-        debugPrint("Entering program mode...");
-        if(TIMER_TARGET != 0){
+        if(!PROGMODE)
+        {
+          debugPrint("Entering program mode...");
+          if(TIMER_TARGET != 0){
+            clearTimer();
+          }
+  
+          PROGMODE = true;
+          beep();
+        }
+        else
+        {
+          debugPrint("Exiting program mode...");
+          PROGMODE = false;
+          
+          // discard timer if active
+          beep();
+          beep();
           clearTimer();
         }
-
-        PROGMODE = true;
-        beep();
       }
-      else
+      else if(code == MINUS_ONE)
       {
-        debugPrint("Exiting program mode...");
-        PROGMODE = false;
-        
-        // discard timer if active
-        clearTimer();
+        if(timer > 0)
+        {
+          timer = timer - 2; 
+          beep();
+          debugPrint(String(timer));
+        }
       }
-    }
-    else if(code == MINUS_ONE)
-    {
-      if(timer > 0)
+      else if(code == PLUS_ONE)
       {
-        timer = timer - 2; 
-        beep();
-        debugPrint(String(timer));
+         timer = timer + 2; 
+         beep();
+         debugPrint(String(timer));
       }
+      
+      lastKeyPress = millis();
+       
     }
-    else if(code == PLUS_ONE)
-    {
-       timer = timer + 2; 
-       beep();
-       debugPrint(String(timer));
-    }
-    
-    delay(1000);
   }
 }
 
