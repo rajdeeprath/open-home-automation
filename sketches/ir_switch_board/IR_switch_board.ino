@@ -2,7 +2,7 @@
 #include <EEPROM.h>
 #include "Timer.h"
 
-#define RELAY_POWER 10
+//#define RELAY_POWER 10
 #define RELAY_1 5
 #define RELAY_2 6
 #define IR 8
@@ -63,8 +63,8 @@ void setup()
   digitalWrite(RELAY_2, HIGH);
 
   // POWER UP RELAY
-  pinMode(RELAY_POWER, OUTPUT);
-  digitalWrite(RELAY_POWER, HIGH);  
+  //pinMode(RELAY_POWER, OUTPUT);
+  //digitalWrite(RELAY_POWER, HIGH);  
   
   pinMode(IR, INPUT);
   pinMode(BEEPER, OUTPUT);
