@@ -2,6 +2,7 @@
 #include <EEPROM.h>
 #include "Timer.h"
 
+#define RELAY_POWER 10
 #define RELAY_1 5
 #define RELAY_2 6
 #define IR 8
@@ -40,6 +41,7 @@ int TIMER_TARGET;
 int timerEvent;
 
 long lastKeyPress;
+long keyPressDelay;
 
 Timer t;
 
@@ -59,6 +61,10 @@ void setup()
   
   pinMode(RELAY_2, OUTPUT);
   digitalWrite(RELAY_2, HIGH);
+
+  // POWER UP RELAY
+  pinMode(RELAY_POWER, OUTPUT);
+  digitalWrite(RELAY_POWER, HIGH);  
   
   pinMode(IR, INPUT);
   pinMode(BEEPER, OUTPUT);
@@ -88,9 +94,9 @@ void readIR()
   {
     code = String(results.value, HEX);
     debugPrint(code);
-    irrecv.resume(); // Receive the next value
-
-    if(millis() - lastKeyPress > 1000)
+    keyPressDelay = (millis() - lastKeyPress);
+    debugPrint("last keypress " + String(keyPressDelay));
+    if(keyPressDelay > 1000)
     { 
       if(code == ONE)
       {
@@ -168,8 +174,9 @@ void readIR()
       }
       
       lastKeyPress = millis();
-       
     }
+
+    irrecv.resume(); // Receive the next value
   }
 }
 
@@ -232,9 +239,9 @@ void saveSettings()
   EEPROM.put(eeAddress, conf);
   debugPrint("Conf saved");
 
-  debugPrint(String(conf.relay_1));
-  debugPrint(String(conf.relay_2));
-  debugPrint(String(conf.timestamp));
+  //debugPrint(String(conf.relay_1));
+  //debugPrint(String(conf.relay_2));
+  //debugPrint(String(conf.timestamp));
 }
 
 
@@ -243,9 +250,9 @@ void readSettings()
   eeAddress = 0;
   EEPROM.get(eeAddress, conf);
 
-  debugPrint(String(conf.relay_1));
-  debugPrint(String(conf.relay_2));
-  debugPrint(String(conf.timestamp));
+  //debugPrint(String(conf.relay_1));
+  //debugPrint(String(conf.relay_2));
+  //debugPrint(String(conf.timestamp));
 }
 
 
