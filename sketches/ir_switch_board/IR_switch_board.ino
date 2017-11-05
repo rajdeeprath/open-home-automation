@@ -14,6 +14,8 @@
 #define MINUS_ONE "ffe01f"
 #define PLUS_ONE "ffa857"
 
+#define TIME_JUMP 10
+
 
 boolean RELAY_1_ON = false;
 boolean RELAY_2_ON = false;
@@ -161,14 +163,14 @@ void readIR()
       {
         if(timer > 0)
         {
-          timer = timer - 2; 
+          timer = timer - TIME_JUMP; 
           beep();
           debugPrint(String(timer));
         }
       }
       else if(code == PLUS_ONE)
       {
-         timer = timer + 2; 
+         timer = timer + TIME_JUMP; 
          beep();
          debugPrint(String(timer));
       }
