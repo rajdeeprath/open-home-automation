@@ -4,8 +4,10 @@
 #include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
+#include <RCSwitch.h>
 
 #define ADC A0
+#define RF_TRANSMIT 4
 
 const String NAME = "HMU-BL-001";
 String capailities = "{\"name\":\"HMU-SB-001\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH2\":{\"get\":\"\/switch\/2\",\"set\":\"\/switch\/2\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH3\":{\"get\":\"\/switch\/3\",\"set\":\"\/switch\/3\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
@@ -14,13 +16,19 @@ boolean resetFlag = false;
 boolean debug = true;
 int eeAddress = 0;
 int bell_input;
+boolean BELL_ON = false;
+boolean canNotify = false;
+long lastDetection;
+long sinceLastDetection;
 
+
+RCSwitch mySwitch = RCSwitch();
 
 struct Settings {
   int notify = 1;
   long timestamp;
   int endpoint_length;
-  char endpoint[40] = "";
+  char endpoint[50] = "";
 };
 
 
@@ -29,7 +37,7 @@ std::unique_ptr<ESP8266WebServer> server;
 
 
 HTTPClient http;
-boolean posting = true;
+boolean posting;
 
 /**************************************************/
 
@@ -188,6 +196,9 @@ void setup()
   debugPrint("HTTP server started");
   debugPrint(String(WiFi.localIP()));
 
+  // Transmitter is connected to Arduino Pin #D2 (04)  
+  mySwitch.enableTransmit(RF_TRANSMIT);
+  
 }
 
 void loop() {
@@ -206,8 +217,7 @@ void loop() {
   }
   else
   {
-    bell_input = analogRead(ADC);
-    notifyBell();
+    checkBell();
 
     delay(3);
     server->handleClient();
@@ -216,11 +226,50 @@ void loop() {
 
 
 
-void notifyBell()
+void checkBell()
 {
-  notifyURL();
+   // disable fo rdebugging
+  //bell_input = analogRead(ADC);
+  bell_input = 600;
+  sinceLastDetection = millis() - lastDetection;
+  //debugPrint("sinceLastDetection " + String(sinceLastDetection));
+  
+  // Bell on is valid for 30 seconds only
+  if(sinceLastDetection > 30000){
+    //debugPrint("Assuming bell off");
+    BELL_ON = false;
+  }
+
+  canNotify = ((sinceLastDetection > 60000) && (bell_input > 500));
+  //debugPrint("canNotify " + String(canNotify));
+  
+  if(canNotify && !BELL_ON)
+  {
+    debugPrint("Assuming bell on");
+    
+    BELL_ON = true;
+    lastDetection = millis();
+
+    if(conf.notify == 1)
+    {
+      // VIA RF
+      notifyRF();
+      
+      // VIA URL
+      if(conf.endpoint_length > 4){
+        notifyURL();
+      }
+    }
+  }
 }
 
+
+
+void notifyRF()
+{
+  debugPrint("Sending transmission");  
+  mySwitch.send("0100001001000101010011000100110000100001");
+}
 
 
 void notifyURL()
@@ -230,14 +279,18 @@ void notifyURL()
     readSettings();  
     
     posting = true;
-    debugPrint("Sending transmission");    
+    debugPrint("Sending url call");    
         
     http.begin(String(conf.endpoint));
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    int httpCode = http.POST("title=foo&body=bar&userId=1");
+    
+    int httpCode = http.POST("bell=" + String(BELL_ON));
+    
     String payload = http.getString();
+    
     debugPrint(String(httpCode));
     debugPrint(String(payload));   
+    
     http.end();
 
     posting = false;
@@ -247,6 +300,8 @@ void notifyURL()
 
 void initSettings()
 {
+  sinceLastDetection = millis() ;
+  
   readSettings();
   if(conf.endpoint_length <= 0){
       char tmp[] = "";
