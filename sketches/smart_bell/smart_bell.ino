@@ -8,18 +8,25 @@
 
 #define ADC A0
 #define RF_TRANSMIT 4
+#define BELL_SENSOR_RELAY 12
 
 const String NAME = "HMU-BL-001";
-String capailities = "{\"name\":\"HMU-SB-001\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH2\":{\"get\":\"\/switch\/2\",\"set\":\"\/switch\/2\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH3\":{\"get\":\"\/switch\/3\",\"set\":\"\/switch\/3\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capailities = "{\"name\":\"" + NAME+ "\",\"devices\":{},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 boolean resetFlag = false;
 boolean debug = true;
 int eeAddress = 0;
 int bell_input;
+boolean BELL_DETECTION_LOCK = false;
+boolean BELL_SENSOR_ON = false;
 boolean BELL_ON = false;
+boolean BELL_TIMEOUT_BREACHED = false;
+int BELL_INPUT_THRESHOLD = 900;
+long BELL_TIMEOUT = 45000;
 boolean canNotify = false;
 long lastDetection;
 long sinceLastDetection;
+
 
 
 RCSwitch mySwitch = RCSwitch();
@@ -169,6 +176,10 @@ void setup()
 {
   Serial.begin(9600);
 
+  // bell sensor -> Isolated Mode Power Supply Controlled through Relay
+  pinMode(BELL_SENSOR_RELAY, OUTPUT);
+  enableBellSensor();
+  
   // start eeprom
   EEPROM.begin(512);
   initSettings();
@@ -226,29 +237,60 @@ void loop() {
 
 
 
+void disableBellSensor()
+{
+  debugPrint("Disabling bell sensor");
+  
+  if(BELL_SENSOR_ON) {
+    digitalWrite(BELL_SENSOR_RELAY, LOW);
+    BELL_SENSOR_ON = false;
+  }
+}
+
+
+
+void enableBellSensor()
+{
+  debugPrint("Enabling bell sensor");
+  
+  if(!BELL_SENSOR_ON) {
+    digitalWrite(BELL_SENSOR_RELAY, HIGH);
+    BELL_SENSOR_ON = true;
+  }
+}
+
+
+
 void checkBell()
 {
-   // disable fo rdebugging
-  //bell_input = analogRead(ADC);
-  bell_input = 600;
-  sinceLastDetection = millis() - lastDetection;
-  //debugPrint("sinceLastDetection " + String(sinceLastDetection));
+  // disable for debugging
+  bell_input = analogRead(ADC);
+  debugPrint("bell_input " + String(bell_input));
   
-  // Bell on is valid for 30 seconds only
-  if(sinceLastDetection > 30000){
-    //debugPrint("Assuming bell off");
-    BELL_ON = false;
+  //bell_input = 600;
+  sinceLastDetection = millis() - lastDetection;
+  BELL_ON = (bell_input > BELL_INPUT_THRESHOLD);
+  BELL_TIMEOUT_BREACHED = (sinceLastDetection > BELL_TIMEOUT);
+  canNotify = (BELL_TIMEOUT_BREACHED && BELL_ON);
+  
+  
+  // if 'bell lock timeout' occurred then open bell detection lock
+  if(BELL_TIMEOUT_BREACHED && BELL_DETECTION_LOCK){
+    //debugPrint("Removing bell detection lock");
+    BELL_DETECTION_LOCK = false;
+    enableBellSensor();
   }
 
-  canNotify = ((sinceLastDetection > 60000) && (bell_input > 500));
-  //debugPrint("canNotify " + String(canNotify));
-  
-  if(canNotify && !BELL_ON)
+
+  // if 'canNotify' and 'bell detection lock' is open do detection action now
+  if(canNotify && !BELL_DETECTION_LOCK)
   {
-    debugPrint("Assuming bell on");
-    
-    BELL_ON = true;
+    debugPrint("Bell on event detected!");
     lastDetection = millis();
+
+    // protect bell sensor from maniacs! => TURN ON BELL DETECTION LOCK
+    disableBellSensor();    
+    BELL_DETECTION_LOCK = true;
 
     if(conf.notify == 1)
     {
@@ -284,7 +326,7 @@ void notifyURL()
     http.begin(String(conf.endpoint));
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     
-    int httpCode = http.POST("bell=" + String(BELL_ON));
+    int httpCode = http.POST("bell=" + String(BELL_DETECTION_LOCK));
     
     String payload = http.getString();
     
