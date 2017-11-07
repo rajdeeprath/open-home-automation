@@ -11,7 +11,7 @@
 #define BELL_SENSOR_RELAY 12
 
 const String NAME = "HMU-BL-001";
-String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 boolean resetFlag = false;
 boolean debug = true;
@@ -91,7 +91,7 @@ void getBellNotifyURL()
   }
   else
   {
-    server->send(200, "text/plain", "url=" + url);
+    server->send(200, "text/plain", "URL=" + url);
   }
 }
 
@@ -137,8 +137,7 @@ void getNotify()
   readSettings();
 
   int notify = conf.notify;
-
-  server->send(200, "text/plain", "notify=" + String(notify));
+  server->send(200, "text/plain", "NOTIFY=" + String(notify));
 }
 
 
@@ -184,8 +183,11 @@ void setup()
   EEPROM.begin(512);
   initSettings();
 
+  char APNAME[NAME.length() + 1];
+  NAME.toCharArray(APNAME, NAME.length() + 1);
+      
   WiFiManager wifiManager;
-  wifiManager.autoConnect();
+  wifiManager.autoConnect(APNAME, "iot@123!");
 
   //if you get here you have connected to the WiFi
   debugPrint("connected...yeey :)");
