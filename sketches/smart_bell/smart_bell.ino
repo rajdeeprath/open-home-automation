@@ -11,7 +11,7 @@
 #define BELL_SENSOR_RELAY 12
 
 const String NAME = "HMU-BL-001";
-String capailities = "{\"name\":\"" + NAME+ "\",\"devices\":{},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 boolean resetFlag = false;
 boolean debug = true;
@@ -114,12 +114,12 @@ void setBellNotifyURL()
     {
       char tmp[url.length() + 1];
       url.toCharArray(tmp, url.length() + 1);
-      
+
       conf.endpoint_length = url.length();
 
       memset(conf.endpoint, 0, sizeof(conf.endpoint));
       strncpy(conf.endpoint, tmp, strlen(tmp));
-      
+
       server->send(200, "text/plain", "url=" + url);
       writeSettings();
     }
@@ -179,7 +179,7 @@ void setup()
   // bell sensor -> Isolated Mode Power Supply Controlled through Relay
   pinMode(BELL_SENSOR_RELAY, OUTPUT);
   enableBellSensor();
-  
+
   // start eeprom
   EEPROM.begin(512);
   initSettings();
@@ -196,7 +196,7 @@ void setup()
   server->on("/reset", handleReset);
 
   server->on("/notify", getNotify);
-  server->on("/notif/set", setNotify);
+  server->on("/notify/set", setNotify);
 
   server->on("/notify/url", getBellNotifyURL);
   server->on("/notify/url/set", setBellNotifyURL);
@@ -207,9 +207,10 @@ void setup()
   debugPrint("HTTP server started");
   debugPrint(String(WiFi.localIP()));
 
-  // Transmitter is connected to Arduino Pin #D2 (04)  
+  // Transmitter is connected to Arduino Pin #D2 (04)
   mySwitch.enableTransmit(RF_TRANSMIT);
-  
+  mySwitch.setRepeatTransmit(5);
+
 }
 
 void loop() {
@@ -240,8 +241,8 @@ void loop() {
 void disableBellSensor()
 {
   debugPrint("Disabling bell sensor");
-  
-  if(BELL_SENSOR_ON) {
+
+  if (BELL_SENSOR_ON) {
     digitalWrite(BELL_SENSOR_RELAY, LOW);
     BELL_SENSOR_ON = false;
   }
@@ -252,8 +253,8 @@ void disableBellSensor()
 void enableBellSensor()
 {
   debugPrint("Enabling bell sensor");
-  
-  if(!BELL_SENSOR_ON) {
+
+  if (!BELL_SENSOR_ON) {
     digitalWrite(BELL_SENSOR_RELAY, HIGH);
     BELL_SENSOR_ON = true;
   }
@@ -263,42 +264,41 @@ void enableBellSensor()
 
 void checkBell()
 {
-  // disable for debugging
   bell_input = analogRead(ADC);
-  debugPrint("bell_input " + String(bell_input));
-  
-  //bell_input = 600;
+  //debugPrint("bell_input " + String(bell_input));
+
+  // Check alarm state
   sinceLastDetection = millis() - lastDetection;
   BELL_ON = (bell_input > BELL_INPUT_THRESHOLD);
   BELL_TIMEOUT_BREACHED = (sinceLastDetection > BELL_TIMEOUT);
   canNotify = (BELL_TIMEOUT_BREACHED && BELL_ON);
-  
-  
+
+
   // if 'bell lock timeout' occurred then open bell detection lock
-  if(BELL_TIMEOUT_BREACHED && BELL_DETECTION_LOCK){
-    //debugPrint("Removing bell detection lock");
+  if (BELL_TIMEOUT_BREACHED && BELL_DETECTION_LOCK) {
+    debugPrint("Removing bell detection lock");
     BELL_DETECTION_LOCK = false;
     enableBellSensor();
   }
 
 
   // if 'canNotify' and 'bell detection lock' is open do detection action now
-  if(canNotify && !BELL_DETECTION_LOCK)
+  if (canNotify && !BELL_DETECTION_LOCK)
   {
     debugPrint("Bell on event detected!");
     lastDetection = millis();
 
     // protect bell sensor from maniacs! => TURN ON BELL DETECTION LOCK
-    disableBellSensor();    
+    disableBellSensor();
     BELL_DETECTION_LOCK = true;
 
-    if(conf.notify == 1)
+    if (conf.notify == 1)
     {
       // VIA RF
       notifyRF();
-      
+
       // VIA URL
-      if(conf.endpoint_length > 4){
+      if (conf.endpoint_length > 4) {
         notifyURL();
       }
     }
@@ -309,30 +309,30 @@ void checkBell()
 
 void notifyRF()
 {
-  debugPrint("Sending transmission");  
-  mySwitch.send("0100001001000101010011000100110000100001");
+  debugPrint("Sending transmission");
+  mySwitch.send(1, 24);
 }
 
 
 void notifyURL()
 {
-  if(!posting)
+  if (!posting)
   {
-    readSettings();  
-    
+    readSettings();
+
     posting = true;
-    debugPrint("Sending url call");    
-        
+    debugPrint("Sending url call");
+
     http.begin(String(conf.endpoint));
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    
+
     int httpCode = http.POST("bell=" + String(BELL_DETECTION_LOCK));
-    
+
     String payload = http.getString();
-    
+
     debugPrint(String(httpCode));
-    debugPrint(String(payload));   
-    
+    debugPrint(String(payload));
+
     http.end();
 
     posting = false;
@@ -343,12 +343,12 @@ void notifyURL()
 void initSettings()
 {
   sinceLastDetection = millis() ;
-  
+
   readSettings();
-  if(conf.endpoint_length <= 0){
-      char tmp[] = "";
-      strncpy(conf.endpoint, tmp, strlen(tmp));
-      writeSettings();
+  if (conf.endpoint_length <= 0) {
+    char tmp[] = "";
+    strncpy(conf.endpoint, tmp, strlen(tmp));
+    writeSettings();
   }
 }
 
@@ -362,11 +362,11 @@ void writeSettings()
   eeAddress++;
   EEPROM.write(eeAddress, conf.timestamp);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.endpoint_length); 
+  EEPROM.write(eeAddress, conf.endpoint_length);
 
   eeAddress++;
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
-  
+
   EEPROM.commit();
 
   debugPrint("Conf saved");
@@ -411,7 +411,7 @@ void readSettings()
 
 
 void readEEPROM(int startAdr, int maxLength, char* dest) {
-  
+
   for (int i = 0; i < maxLength; i++) {
     dest[i] = char(EEPROM.read(startAdr + i));
   }
@@ -421,7 +421,7 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
 
 void eraseSettings()
 {
-  for (int i = 0; i < 512; i++){
+  for (int i = 0; i < 512; i++) {
     EEPROM.write(i, 0);
   }
 }
