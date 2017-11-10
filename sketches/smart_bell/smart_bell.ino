@@ -24,7 +24,7 @@ boolean BELL_SENSOR_ON = false;
 boolean BELL_ON = false;
 boolean BELL_TIMEOUT_BREACHED = false;
 int BELL_INPUT_THRESHOLD = 900;
-long BELL_TIMEOUT = 45000;
+long BELL_TIMEOUT = 35000;
 boolean canNotify = false;
 long lastDetection;
 long sinceLastDetection;
