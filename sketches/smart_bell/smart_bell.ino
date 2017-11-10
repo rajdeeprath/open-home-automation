@@ -14,8 +14,9 @@
 const String NAME = "HMU-BL-001";
 String capabilities = "{\"name\":\" + NAME + \",\"devices\":{},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
-boolean resetFlag = false;
-boolean debug = true;
+// Debugging mode
+boolean debug = false;
+
 int eeAddress = 0;
 int bell_input;
 boolean BELL_DETECTION_LOCK = false;
@@ -31,7 +32,7 @@ boolean LED_ON;
 String IP;
 boolean inited;
 
-
+WiFiManager wifiManager;
 RCSwitch mySwitch = RCSwitch();
 
 struct Settings {
@@ -39,6 +40,7 @@ struct Settings {
   long timestamp;
   int endpoint_length;
   int notify_mode;
+  int reset = 0;
   char endpoint[50] = "";
 };
 
@@ -59,7 +61,8 @@ void handleRoot() {
 
 void handleReset()
 {
-  resetFlag = true;
+  conf.reset = 1;
+  writeSettings();
   server->send(200, "text/plain", "Resetting in 5 seconds");
 }
 
@@ -227,21 +230,27 @@ void setNotify()
 void setup()
 {
   Serial.begin(9600);
+  
+  // start eeprom
+  EEPROM.begin(512);
+
+  // Check for reset and do reset routine
+  readSettings();
+  if(conf.reset == 1){
+    debugPrint("Reset flag detected!");    
+    doReset();
+  }
 
   // init led pin
   pinMode(LED, OUTPUT);
 
   // bell sensor -> Isolated Mode Power Supply Controlled through Relay
   pinMode(BELL_SENSOR_RELAY, OUTPUT);
-  enableBellSensor();
-
-  // start eeprom
-  EEPROM.begin(512);
+  //enableBellSensor();
 
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
-      
-  WiFiManager wifiManager;
+
   wifiManager.autoConnect(APNAME, "iot@123!");
 
   //if you get here you have connected to the WiFi
@@ -281,16 +290,9 @@ void loop() {
       initSettings();
   }
 
-  if (resetFlag)
+  if (conf.reset == 1)
   {
-    resetFlag = false;   
-
-    eraseSettings();
     delay(5000);
-
-    WiFiManager wifiManager;
-    wifiManager.resetSettings();
-
     ESP.restart();
   }
   else
@@ -302,6 +304,21 @@ void loop() {
   }
 }
 
+
+void doReset()
+{
+  conf.notify = 0;
+  conf.timestamp = 0;
+  conf.endpoint_length = 0;
+  conf.notify_mode = 0;
+  conf.reset = 0;
+  memset(conf.endpoint, 0, sizeof(conf.endpoint));
+  
+  eraseSettings();   
+  delay(1000);
+  wifiManager.resetSettings();
+  delay(1000);
+}
 
 
 void disableBellSensor()
@@ -389,10 +406,10 @@ void checkBell()
       }
 
 
-      // if URL notify is allowed then do it
+      // if URL notify is allowed tdo it
       if(conf.notify_mode == 2 || conf.notify_mode == 3){
         // VIA URL
-        if (conf.endpoint_length > 4) {
+        if (conf.endpoint_length > 4 && conf.endpoint != "0.0.0.0") {
           notifyURL();
         }
       }
@@ -444,7 +461,7 @@ void initSettings()
   {
     debugPrint("Setting defaults");
     
-    String url = "http://" + String(IP);
+    String url = "0.0.0.0";
     char tmp[url.length() + 1];
     url.toCharArray(tmp, url.length() + 1);
 
@@ -460,7 +477,7 @@ void initSettings()
 
 
   // Start with locked sensor to allow callibration
-  sinceLastDetection = millis() ;
+  lastDetection = millis() ;
   disableBellSensor();
   BELL_DETECTION_LOCK = true;
   ledOn();
@@ -478,7 +495,9 @@ void writeSettings()
   eeAddress++;
   EEPROM.write(eeAddress, conf.endpoint_length);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.notify_mode);  
+  EEPROM.write(eeAddress, conf.notify_mode); 
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.reset);  
 
   eeAddress++;
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
@@ -516,6 +535,8 @@ void readSettings()
   conf.endpoint_length = EEPROM.read(eeAddress);
   eeAddress++;
   conf.notify_mode = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.reset = EEPROM.read(eeAddress);
 
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
