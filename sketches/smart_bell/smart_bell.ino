@@ -9,9 +9,10 @@
 #define ADC A0
 #define RF_TRANSMIT 4
 #define BELL_SENSOR_RELAY 12
+#define LED 5
 
 const String NAME = "HMU-BL-001";
-String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capabilities = "{\"name\":\" + NAME + \",\"devices\":{},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 boolean resetFlag = false;
 boolean debug = true;
@@ -26,7 +27,9 @@ long BELL_TIMEOUT = 45000;
 boolean canNotify = false;
 long lastDetection;
 long sinceLastDetection;
-
+boolean LED_ON;
+String IP;
+boolean inited;
 
 
 RCSwitch mySwitch = RCSwitch();
@@ -35,6 +38,7 @@ struct Settings {
   int notify = 1;
   long timestamp;
   int endpoint_length;
+  int notify_mode;
   char endpoint[50] = "";
 };
 
@@ -49,7 +53,7 @@ boolean posting;
 /**************************************************/
 
 void handleRoot() {
-  server->send(200, "application/json", capailities);
+  server->send(200, "application/json", capabilities);
 }
 
 
@@ -73,6 +77,55 @@ void handleNotFound() {
     message += " " + server->argName(i) + ": " + server->arg(i) + "\n";
   }
   server->send(404, "text/plain", message);
+}
+
+
+
+
+void getBellNotifyMode()
+{
+  int notify_mode;
+
+  readSettings();
+
+  notify_mode = conf.notify_mode;
+
+  if (notify_mode < 1 || notify_mode > 3)
+  {
+    server->send(400, "text/plain", "Invalid notify mode");
+  }
+  else
+  {
+    server->send(200, "text/plain", "NOTIFYMODE=" + String(notify_mode));
+  }
+}
+
+
+
+void setBellNotifyMode()
+{
+  int notify_mode;
+
+  if (server->hasArg("mode"))
+  {
+    notify_mode = server->arg("mode").toInt();;
+
+    if (notify_mode < 1 || notify_mode > 3)
+    {
+      server->send(400, "text/plain", "Invalid notify mode");
+    }
+    else
+    {
+      conf.notify_mode = notify_mode;
+
+      server->send(200, "text/plain", "NOTIFYMODE=" + String(notify_mode));
+      writeSettings();
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No value provided");
+  }
 }
 
 
@@ -175,13 +228,15 @@ void setup()
 {
   Serial.begin(9600);
 
+  // init led pin
+  pinMode(LED, OUTPUT);
+
   // bell sensor -> Isolated Mode Power Supply Controlled through Relay
   pinMode(BELL_SENSOR_RELAY, OUTPUT);
   enableBellSensor();
 
   // start eeprom
   EEPROM.begin(512);
-  initSettings();
 
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
@@ -203,26 +258,35 @@ void setup()
   server->on("/notify/url", getBellNotifyURL);
   server->on("/notify/url/set", setBellNotifyURL);
 
+  server->on("/notify/mode", getBellNotifyMode);
+  server->on("/notify/mode/set", setBellNotifyMode);
+
   server->onNotFound(handleNotFound);
   server->begin();
 
   debugPrint("HTTP server started");
+
+  IP = String(WiFi.localIP());
   debugPrint(String(WiFi.localIP()));
 
   // Transmitter is connected to Arduino Pin #D2 (04)
   mySwitch.enableTransmit(RF_TRANSMIT);
   mySwitch.setRepeatTransmit(5);
-
 }
 
 void loop() {
 
+  if(!inited){
+      inited = true;
+      initSettings();
+  }
+
   if (resetFlag)
   {
-    resetFlag = false;
-    delay(5000);
+    resetFlag = false;   
 
     eraseSettings();
+    delay(5000);
 
     WiFiManager wifiManager;
     wifiManager.resetSettings();
@@ -264,9 +328,28 @@ void enableBellSensor()
 
 
 
+void ledOn()
+{
+  if(!LED_ON){
+    digitalWrite(LED, HIGH); 
+    LED_ON = true;
+  }
+}
+
+
+void ledOff()
+{
+  if(LED_ON){
+    digitalWrite(LED, LOW); 
+    LED_ON = false;
+  }
+}
+
+
 void checkBell()
 {
   bell_input = analogRead(ADC);
+  //bell_input = 910;
   //debugPrint("bell_input " + String(bell_input));
 
   // Check alarm state
@@ -281,6 +364,7 @@ void checkBell()
     debugPrint("Removing bell detection lock");
     BELL_DETECTION_LOCK = false;
     enableBellSensor();
+    ledOff();
   }
 
 
@@ -293,16 +377,26 @@ void checkBell()
     // protect bell sensor from maniacs! => TURN ON BELL DETECTION LOCK
     disableBellSensor();
     BELL_DETECTION_LOCK = true;
+    ledOn();
 
     if (conf.notify == 1)
     {
-      // VIA RF
-      notifyRF();
 
-      // VIA URL
-      if (conf.endpoint_length > 4) {
-        notifyURL();
+      // if RF notify is allowed then do it
+      if(conf.notify_mode == 1 || conf.notify_mode == 3){
+        // VIA RF
+        notifyRF();
       }
+
+
+      // if URL notify is allowed then do it
+      if(conf.notify_mode == 2 || conf.notify_mode == 3){
+        // VIA URL
+        if (conf.endpoint_length > 4) {
+          notifyURL();
+        }
+      }
+      
     }
   }
 }
@@ -344,14 +438,32 @@ void notifyURL()
 
 void initSettings()
 {
-  sinceLastDetection = millis() ;
-
   readSettings();
-  if (conf.endpoint_length <= 0) {
-    char tmp[] = "";
+  
+  if (conf.notify_mode<1 || conf.notify_mode>3) 
+  {
+    debugPrint("Setting defaults");
+    
+    String url = "http://" + String(IP);
+    char tmp[url.length() + 1];
+    url.toCharArray(tmp, url.length() + 1);
+
+    conf.endpoint_length = url.length();
+    memset(conf.endpoint, 0, sizeof(conf.endpoint));
     strncpy(conf.endpoint, tmp, strlen(tmp));
+    
+    conf.notify = 0;
+    conf.notify_mode = 3;
+    
     writeSettings();
   }
+
+
+  // Start with locked sensor to allow callibration
+  sinceLastDetection = millis() ;
+  disableBellSensor();
+  BELL_DETECTION_LOCK = true;
+  ledOn();
 }
 
 
@@ -365,6 +477,8 @@ void writeSettings()
   EEPROM.write(eeAddress, conf.timestamp);
   eeAddress++;
   EEPROM.write(eeAddress, conf.endpoint_length);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.notify_mode);  
 
   eeAddress++;
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
@@ -374,6 +488,7 @@ void writeSettings()
   debugPrint("Conf saved");
   debugPrint(String(conf.notify));
   debugPrint(String(conf.endpoint_length));
+  debugPrint(String(conf.notify_mode));
   debugPrint(String(conf.endpoint));
   debugPrint(String(conf.timestamp));
 }
@@ -399,6 +514,8 @@ void readSettings()
   conf.timestamp = EEPROM.read(eeAddress);
   eeAddress++;
   conf.endpoint_length = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.notify_mode = EEPROM.read(eeAddress);
 
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
@@ -406,6 +523,7 @@ void readSettings()
   debugPrint("Conf read");
   debugPrint(String(conf.notify));
   debugPrint(String(conf.endpoint_length));
+  debugPrint(String(conf.notify_mode));
   debugPrint(String(conf.endpoint));
   debugPrint(String(conf.timestamp));
 }
@@ -423,9 +541,10 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
 
 void eraseSettings()
 {
-  for (int i = 0; i < 512; i++) {
+  debugPrint("Erasing eeprom...");
+  
+  for (int i = 0; i < 512; i++)
     EEPROM.write(i, 0);
-  }
 }
 
 
