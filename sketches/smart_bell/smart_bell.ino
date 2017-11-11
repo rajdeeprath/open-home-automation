@@ -12,7 +12,7 @@
 #define LED 5
 
 const String NAME = "HMU-BL-001";
-String capabilities = "{\"name\":\" + NAME + \",\"devices\":{},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capabilities = "{\"name\":\" + NAME + \",\"devices\":{\"name\":\"Bell Sensor\",\"actions\":{\"getTimeout\":{\"method\":\"get\",\"path\":\"\/sensor\/1\/timeout\"},\"setTimeout\":{\"path\":\"\/sensor\/1\/timeout\/set\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"Between 15 and 60\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 // Debugging mode
 boolean debug = false;
@@ -41,6 +41,7 @@ struct Settings {
   int endpoint_length;
   int notify_mode;
   int reset = 0;
+  int bell_timeout = 35;
   char endpoint[50] = "";
 };
 
@@ -120,14 +121,64 @@ void setBellNotifyMode()
     else
     {
       conf.notify_mode = notify_mode;
-
-      server->send(200, "text/plain", "NOTIFYMODE=" + String(notify_mode));
       writeSettings();
+
+      server->send(200, "text/plain", "NOTIFYMODE=" + String(notify_mode));      
     }
   }
   else
   {
     server->send(400, "text/plain", "No value provided");
+  }
+}
+
+
+
+
+void getBellSensorTimeout()
+{
+  int timeout;
+
+  readSettings();
+
+  timeout = conf.bell_timeout;
+
+  if (timeout<15)
+  {
+    server->send(400, "text/plain", "Invalid sensor timeout value! Minimum should be 15");
+  }
+  else
+  {
+    server->send(200, "text/plain", "TIMEOUT=" + String(timeout));
+  }
+}
+
+
+
+void setBellSensorTimeout()
+{
+  int timeout;
+
+  if (server->hasArg("time"))
+  {
+    timeout = server->arg("time").toInt();;
+
+    if (timeout < 15)
+    {
+      server->send(400, "text/plain", "Invalid sensor timeout value! Minimum should be 15");
+    }
+    else
+    {
+      conf.bell_timeout = timeout;
+      updateBellSensorTimeout();      
+
+      writeSettings();
+      server->send(200, "text/plain", "TIMEOUT=" + String(timeout));      
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No timeout value provided");
   }
 }
 
@@ -176,8 +227,9 @@ void setBellNotifyURL()
       memset(conf.endpoint, 0, sizeof(conf.endpoint));
       strncpy(conf.endpoint, tmp, strlen(tmp));
 
-      server->send(200, "text/plain", "url=" + url);
       writeSettings();
+      
+      server->send(200, "text/plain", "url=" + url);
     }
   }
   else
@@ -210,8 +262,8 @@ void setNotify()
     if (notify == 0 || notify == 1)
     {
       conf.notify = notify;
-      server->send(200, "text/plain", "notify=" + String(conf.notify));
       writeSettings();
+      server->send(200, "text/plain", "notify=" + String(conf.notify));      
     }
     else
     {
@@ -269,6 +321,9 @@ void setup()
 
   server->on("/notify/mode", getBellNotifyMode);
   server->on("/notify/mode/set", setBellNotifyMode);
+
+  server->on("/sensor/1/timeout", getBellSensorTimeout);
+  server->on("/sensor/1/timeout/set", setBellSensorTimeout);
 
   server->onNotFound(handleNotFound);
   server->begin();
@@ -471,16 +526,31 @@ void initSettings()
     
     conf.notify = 0;
     conf.notify_mode = 3;
+    conf.bell_timeout = 35;
     
     writeSettings();
   }
 
+
+  // update bell sensor timeout
+  updateBellSensorTimeout();
 
   // Start with locked sensor to allow callibration
   lastDetection = millis() ;
   disableBellSensor();
   BELL_DETECTION_LOCK = true;
   ledOn();
+}
+
+
+// Update the miliseconds of bell sensor timeout
+void updateBellSensorTimeout()
+{
+  if(conf.bell_timeout >= 15){
+    BELL_TIMEOUT = conf.bell_timeout * 1000;
+  }
+
+  debugPrint("BELL_TIMEOUT : " + String(BELL_TIMEOUT));
 }
 
 
@@ -495,7 +565,9 @@ void writeSettings()
   eeAddress++;
   EEPROM.write(eeAddress, conf.endpoint_length);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.notify_mode); 
+  EEPROM.write(eeAddress, conf.notify_mode);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.bell_timeout);  
   eeAddress++;
   EEPROM.write(eeAddress, conf.reset);  
 
@@ -508,8 +580,8 @@ void writeSettings()
   debugPrint(String(conf.notify));
   debugPrint(String(conf.endpoint_length));
   debugPrint(String(conf.notify_mode));
+  debugPrint(String(conf.bell_timeout));
   debugPrint(String(conf.endpoint));
-  debugPrint(String(conf.timestamp));
 }
 
 
@@ -536,6 +608,8 @@ void readSettings()
   eeAddress++;
   conf.notify_mode = EEPROM.read(eeAddress);
   eeAddress++;
+  conf.bell_timeout = EEPROM.read(eeAddress);  
+  eeAddress++;
   conf.reset = EEPROM.read(eeAddress);
 
   eeAddress++;
@@ -545,8 +619,8 @@ void readSettings()
   debugPrint(String(conf.notify));
   debugPrint(String(conf.endpoint_length));
   debugPrint(String(conf.notify_mode));
+  debugPrint(String(conf.bell_timeout));
   debugPrint(String(conf.endpoint));
-  debugPrint(String(conf.timestamp));
 }
 
 
