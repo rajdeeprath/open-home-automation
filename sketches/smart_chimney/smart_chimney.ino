@@ -27,12 +27,14 @@ boolean buzzerPlaying = true;
 long buzserLastUpdate = 0;
 long systemLastAwakeTime = 0;
 long smokeDetectedTime = 0;
+long lastHumanDetected = 0;
 long buzzerFrequency = 2000;
-long systemAwakeThreshold = 1800000;
+long systemAwakeThreshold = 1800000; // 30 minutes before sleep condition is checked | Must be  greater than 'smokeDetectedTimeThreshold' and 'chimneyIdleRuntimeThreshold'
 long sensor_ready_time = 2000;
-long smokeDetectedTimeThreshold = 20000;
-long chimneyIdleRuntimeThreshold = 15000;
+long smokeDetectedTimeThreshold = 1200000; // 20 minutes : Max tolerance time since last detection before sleep mode if not running
+long chimneyIdleRuntimeThreshold = 900000; // 15 minutes : Chimnet power saver time | how long to wait before turning off chimney when no one is there
 long chimneylastRuntime = 0;
+long alarmThreshold = 900000; // 15 minutes : how long to wait before sounding reminder when chimney is running and no one is in room
 boolean debug = true;
 
 
@@ -43,7 +45,7 @@ void setup() {
   pinMode(BUZZER, OUTPUT);
   
   pinMode(CHIMNEY_RELAY, OUTPUT);
-  digitalWrite(CHIMNEY_RELAY, HIGH);
+  digitalWrite(CHIMNEY_RELAY, LOW);
   
   pinMode(SMOKE_SENSOR_1_SWITCH, OUTPUT);
   pinMode(SMOKE_SENSOR_1, INPUT);
@@ -67,6 +69,7 @@ void setup() {
   buzserLastUpdate = millis();
   systemLastAwakeTime = millis();
   smokeDetectedTime = millis();
+  lastHumanDetected = millis();
 
   systemAwaken();
 }
@@ -75,7 +78,6 @@ void setup() {
 
 void loop() 
 {
-  
   // Read PIR and check for human
   pir_val = digitalRead(PIR);
   collectSample(pir_val);
@@ -94,20 +96,24 @@ void loop()
   // wake sleeping system
   if(human)
   {
-    SYSTEM_LISTENING = true;
-    systemLastAwakeTime = millis();
-    //debugPrint("SYSTEM LISTENING => ON");
+    systemAwaken();
+    lastHumanDetected = millis();
+
+    // Turn off buzzer if come one has come into room
+    if(isBuzzerOn){
+      buzzerOff();
+    }
   }
   else
   {
-    // enough time passed and no motion
-    if(millis() - systemLastAwakeTime > systemAwakeThreshold)
+    if(!smoke_event_detected) // no smoke => safe to take a break
     {
-      // machine is not running => deactive system + if no smoke detected recently
-      if((millis() - smokeDetectedTime > smokeDetectedTimeThreshold))
-      {
-        if(!smoke_event_detected) // no smoke => safe to take a break
+        // enough time passed and no motion
+        if(millis() - systemLastAwakeTime > systemAwakeThreshold)
         {
+          // machine is not running => deactive system + if no smoke detected recently
+          if((millis() - smokeDetectedTime > smokeDetectedTimeThreshold))
+          {
             if(!RELAY_ON)
             {
               SYSTEM_LISTENING = false;
@@ -117,14 +123,21 @@ void loop()
             {
               SYSTEM_LISTENING = false;
               debugPrint("SYSTEM LISTENING => OFF");
-
+            
               // Idle for long time ? => turn off
               if(millis() - chimneylastRuntime > chimneyIdleRuntimeThreshold){
                 chimneyOff();
               }
-            }
+            }    
+          }
         }
-
+    }
+    else
+    {
+      // long time past smoke being detected but no one is present in kitchen = > Alarm
+      if(millis() - lastHumanDetected > alarmThreshold)
+      {
+        buzzerOn(); // unconditional
       }
     }
   }
