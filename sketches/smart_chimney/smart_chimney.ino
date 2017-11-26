@@ -16,7 +16,7 @@ int sample_index = 0;
 
 boolean smoke_sensor_1_detected = false;
 boolean smoke_sensor_2_detected = false;
-boolean smoke_event_delected = false;
+boolean smoke_event_detected = false;
 boolean RELAY_ON = false;
 boolean SYSTEM_LISTENING = false;
 boolean isBuzzerOn = false;
@@ -31,6 +31,8 @@ long buzzerFrequency = 2000;
 long systemAwakeThreshold = 1800000;
 long sensor_ready_time = 2000;
 long smokeDetectedTimeThreshold = 20000;
+long chimneyIdleRuntimeThreshold = 15000;
+long chimneylastRuntime = 0;
 boolean debug = true;
 
 
@@ -51,11 +53,9 @@ void setup() {
   
   pinMode(PIR, INPUT);
 
-  mq2SensorsOn();
-
   smoke_sensor_1_detected = false;
   smoke_sensor_2_detected = false;
-  smoke_event_delected = false;
+  smoke_event_detected = false;
   RELAY_ON = false;
   SYSTEM_LISTENING = false;
   isBuzzerOn = false;
@@ -64,10 +64,11 @@ void setup() {
   sensorsListening = false;
   buzzerPlaying = false;
 
-  sensorsListening = true;
   buzserLastUpdate = millis();
   systemLastAwakeTime = millis();
   smokeDetectedTime = millis();
+
+  systemAwaken();
 }
 
 
@@ -89,12 +90,13 @@ void loop()
   }
 
 
+
   // wake sleeping system
   if(human)
   {
     SYSTEM_LISTENING = true;
     systemLastAwakeTime = millis();
-    debugPrint("SYSTEM LISTENING => ON");
+    //debugPrint("SYSTEM LISTENING => ON");
   }
   else
   {
@@ -102,27 +104,50 @@ void loop()
     if(millis() - systemLastAwakeTime > systemAwakeThreshold)
     {
       // machine is not running => deactive system + if no smoke detected recently
-      if(!RELAY_ON && (millis() - smokeDetectedTime > smokeDetectedTimeThreshold))
+      if((millis() - smokeDetectedTime > smokeDetectedTimeThreshold))
       {
-        SYSTEM_LISTENING = false;
-        debugPrint("SYSTEM LISTENING => OFF");
+        if(!smoke_event_detected) // no smoke => safe to take a break
+        {
+            if(!RELAY_ON)
+            {
+              SYSTEM_LISTENING = false;
+              debugPrint("SYSTEM LISTENING => OFF");
+            }
+            else // if machine running and no smoke detected => idle
+            {
+              SYSTEM_LISTENING = false;
+              debugPrint("SYSTEM LISTENING => OFF");
+
+              // Idle for long time ? => turn off
+              if(millis() - chimneylastRuntime > chimneyIdleRuntimeThreshold){
+                chimneyOff();
+              }
+            }
+        }
+
       }
     }
   }
+
 
 
   // If system is active
   if(SYSTEM_LISTENING)
   {
       // turn on sensors if not on
-      mq2SensorsOn();
+      if(isMq2SensorsOn){
+        mq2SensorsOn();
+      }
     
       // Check first sensor
       smoke_sensor_1_val = digitalRead(SMOKE_SENSOR_1); 
+      //debugPrint("smoke_sensor_1_val =" + String(smoke_sensor_1_val));
       if(smoke_sensor_1_val == 1)
       {
         if(!smoke_sensor_1_detected)
         {
+          debugPrint("SMOKE/GAS DETECTED");
+          
           smoke_sensor_1_detected = true;  
           smokeDetectedTime = millis();  
         }    
@@ -138,6 +163,7 @@ void loop()
     
       // Check second sensor
       smoke_sensor_2_val = digitalRead(SMOKE_SENSOR_2);
+      //debugPrint("smoke_sensor_2_val =" + String(smoke_sensor_2_val));
       if(smoke_sensor_2_val == 1)
       {
         if(!smoke_sensor_2_detected)
@@ -158,37 +184,32 @@ void loop()
       //eval
       if(smoke_sensor_1_detected || smoke_sensor_2_detected)
       {
-          if(!smoke_event_delected)
+          if(!smoke_event_detected)
           {
-            smoke_event_delected = true;
+            smoke_event_detected = true;
           }
       }
       else
       {
-          if(smoke_event_delected)
+          if(smoke_event_detected)
           {
-            smoke_event_delected = false;
+            smoke_event_detected = false;
           }
       }
   }
-  else // if system is deactive => turn off sensors to save shelf-life
+  else // if system is deactive => turn off sensors to save shelf-life of sensor
   {
+      debugPrint("Entering sleep mode...");
       mq2SensorsOff();
   }
-  
+
 
   
 
   // Do something on  smoke / gas dsetection
-  if(smoke_event_delected)
+  if(smoke_event_detected)
   {
       chimneyOn();
-      buzzerOn();
-  }
-  else
-  {
-      chimneyOff();
-      buzzerOff();
   }
 
 
@@ -200,6 +221,14 @@ void loop()
 
 }
 
+
+
+
+void systemAwaken()
+{
+  SYSTEM_LISTENING = true;
+  systemLastAwakeTime = millis();
+}
 
 
 
@@ -229,22 +258,26 @@ void playBuzzer()
 
 
 void chimneyOn()
-{
+{    
     if(!RELAY_ON) 
     {
+      debugPrint("Turning on chimney");
       RELAY_ON = true;
       digitalWrite(CHIMNEY_RELAY, LOW);
+            
+      chimneylastRuntime = millis();
     }
 }
 
 
 
 void chimneyOff()
-{
+{  
    if(RELAY_ON) 
    {
+     debugPrint("Turning off chimney");
      RELAY_ON = false;
-     digitalWrite(CHIMNEY_RELAY, HIGH);
+     digitalWrite(CHIMNEY_RELAY, HIGH);     
    }
 }
 
@@ -271,12 +304,13 @@ void buzzerOff()
 
 void collectSample(int reading)
 {
-  sample_index++;
-  if(sample_index > max_samples){
+  if(sample_index > (max_samples - 1)){
     sample_index = 0;
-  }
-  
+  }  
+
+  //debugPrint("sample_index = " + String(sample_index));
   pir_samples[sample_index] = reading;
+  sample_index++;
 }
 
 
@@ -286,35 +320,52 @@ boolean hasMotion()
   motion = true;
   for(int i=0; i< max_samples; i++)
   {
+    //debugPrint("pir_samples = " + String(pir_samples[i]));
+    
     if(pir_samples[i] == 0){
       motion = false;
       break;
     }
-    return motion;
   }
+
+  return motion;
 }
 
 
 void mq2SensorsOff()
-{
-  if(!sensorsListening){
-   digitalWrite(SMOKE_SENSOR_1_SWITCH, LOW);
-   digitalWrite(SMOKE_SENSOR_2_SWITCH, LOW);
-   sensorsListening = true;
+{ 
+  if(sensorsListening)
+  {
+     debugPrint("Disabling sensors");
+     
+     digitalWrite(SMOKE_SENSOR_1_SWITCH, LOW);
+     digitalWrite(SMOKE_SENSOR_2_SWITCH, LOW);
+     sensorsListening = false;
   }
 }
 
 
-void mq2SensorsOn()
-{
-  if(!sensorsListening){
-   digitalWrite(SMOKE_SENSOR_1_SWITCH, HIGH);
-   digitalWrite(SMOKE_SENSOR_2_SWITCH, HIGH);
-   sensorsListening = false;
-  }
 
-  // wait 2 seconds for sensor to be ready before reading
-  delay(sensor_ready_time);
+boolean isMq2SensorsOn()
+{
+  return sensorsListening;
+}
+
+
+
+void mq2SensorsOn()
+{  
+  if(sensorsListening)
+  {    
+     debugPrint("Enabling sensors");
+      
+     digitalWrite(SMOKE_SENSOR_1_SWITCH, HIGH);
+     digitalWrite(SMOKE_SENSOR_2_SWITCH, HIGH);
+     sensorsListening = true;
+     
+     // wait 2 seconds for sensor to be ready before reading
+     delay(sensor_ready_time);      
+  }
 }
 
 
