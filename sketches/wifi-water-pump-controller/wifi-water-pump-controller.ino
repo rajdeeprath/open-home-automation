@@ -55,11 +55,22 @@ std::unique_ptr<ESP8266WebServer> server;
 HTTPClient http;
 boolean posting;
 
+
+
+
+/**
+ * Handle root visit
+ */
 void handleRoot() {
   server->send(200, "application/json", capailities);
 }
 
 
+
+
+/**
+ * Handle reset request
+ */
 void handleReset() 
 {
   conf.reset = 1;
@@ -68,6 +79,11 @@ void handleReset()
 }
 
 
+
+
+/**
+ * Handle non existent path
+ */
 void handleNotFound() {
   String message = "File Not Found\n\n";
   message += "URI: ";
@@ -85,21 +101,10 @@ void handleNotFound() {
 
 
 
-void readAllSwitches()
-{
-  if(conf.relay == 0)
-  {
-    switch1state="STATE=OFF";
-  }
-  else
-  {
-    switch1state="STATE=ON";
-  }
 
-  server->send(200, "text/plain", "SWITCH1:" + switch1state);
-}
-
-
+/**
+ * Gets pump runtime
+ */
 void getSwitchRuntime()
 {
   int runtime;
@@ -121,6 +126,9 @@ void getSwitchRuntime()
 
 
 
+/**
+ * Sets pump runtime in seconds
+ */
 void setSwitchRuntime()
 {
   int runtime;
@@ -150,6 +158,10 @@ void setSwitchRuntime()
 }
 
 
+
+/**
+ * Reads pump switch state
+ */
 void readSwitch()
 {
   if(conf.relay == 0)
@@ -165,6 +177,11 @@ void readSwitch()
 }
 
 
+
+
+/**
+ * Toggles pump state
+ */
 void toggleSwitch()
 {
   checkAndRespondToRelayConditionSafeGuard();
@@ -192,6 +209,10 @@ void toggleSwitch()
 
 
 
+
+/**
+ * Requests swutching the pump on
+ */
 void switchAOn()
 {
   checkAndRespondToRelayConditionSafeGuard();
@@ -207,6 +228,9 @@ void switchAOn()
 
 
 
+/**
+ * Requests swutching the pump off
+ */
 void switchAOff()
 {
   checkAndRespondToRelayConditionSafeGuard();
@@ -220,6 +244,11 @@ void switchAOff()
 }
 
 
+
+
+/**
+ * Gets the http(s) notification permission
+ */
 void getNotify()
 {
   readSettings();
@@ -231,6 +260,9 @@ void getNotify()
 
 
 
+/**
+ * Sets the http(s) notification permission
+ */
 void setNotify()
 {
   int notify;
@@ -257,6 +289,10 @@ void setNotify()
 }
 
 
+
+/**
+ * Gets the http(s) notification url endpoint
+ */
 void getNotifyURL()
 {
   String url;
@@ -277,6 +313,10 @@ void getNotifyURL()
 
 
 
+
+/**
+ * Sets the http(s) notification url endpoint
+ */
 void setNotifyURL()
 {
   String url;
@@ -312,6 +352,9 @@ void setNotifyURL()
 
 
 
+/**
+ * Send http(s) notification to remote url with appropriate parameters
+ */
 void notifyURL()
 {
   if (!posting)
@@ -396,6 +439,10 @@ void checkPumpRunningStatus(){
 }
 
 
+
+/**
+ * Switches water level indicator led on
+ */
 void ledOn()
 {
   conf.led=1;
@@ -403,6 +450,10 @@ void ledOn()
 }
 
 
+
+/**
+ * Switches water level indicator led off
+ */
 void ledOff()
 {
   conf.led=0;
@@ -423,10 +474,13 @@ void checkAndRespondToRelayConditionSafeGuard()
 
 
 
+/**
+ * Checks water level condition using external float switch to determine whether pump can be run or not
+ */
 void relayConditionSafeGuard()
 {
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);  
-  //Serial.println(String(liquidLevelSensorReadIn) + "LIQUID_LEVEL_OK = " + String(LIQUID_LEVEL_OK));
+  debugPrint(String(liquidLevelSensorReadIn) + "LIQUID_LEVEL_OK = " + String(LIQUID_LEVEL_OK));
   if(liquidLevelSensorReadIn >= liquidLevelSensorReadInThreshold) // open magnetic switch
   {
     if(LIQUID_LEVEL_OK)
@@ -461,6 +515,10 @@ void relayConditionSafeGuard()
 }
 
 
+
+/**
+ * Switches off relay(s)
+ */
 void switchOffCompositeRelay()
 {
   if(RELAY_ON){    
@@ -473,6 +531,10 @@ void switchOffCompositeRelay()
 }
 
 
+
+/**
+ * Switches on relay(s)
+ */
 void switchOnCompositeRelay()
 {
   if(!RELAY_ON){
@@ -485,6 +547,10 @@ void switchOnCompositeRelay()
 }
 
 
+
+/**
+ * Checks composite relay state by reading the control pin(s)
+ */
 boolean isCompositeRelayOn()
 {
   int relay_1_state = digitalRead(RELAY1_READER);
@@ -499,6 +565,10 @@ boolean isCompositeRelayOn()
 }
 
 
+
+/**
+ * Check the running status of the pump by reading the acknowledgement pin
+ */
 boolean isPumpRunning()
 {
   int sensor_state = digitalRead(PUMP_SENSOR);
@@ -510,6 +580,11 @@ boolean isPumpRunning()
 }
 
 
+
+
+/**
+ * Setup
+ */
 void setup() {
 
   Serial.begin(9600);
@@ -558,7 +633,6 @@ void setup() {
   server->on("/switch/1/set/off", switchAOff);
   server->on("/switch/1/runtime", getSwitchRuntime);
   server->on("/switch/1/runtime/set", setSwitchRuntime);
-  server->on("/switch/all", readAllSwitches);
   server->on("/notify", getNotify);
   server->on("/notify/set", setNotify);
   server->on("/notify/url", getNotifyURL);
@@ -572,6 +646,12 @@ void setup() {
   debugPrint(String(WiFi.localIP()));
 }
 
+
+
+
+/**
+ * Main loop
+ */
 void loop() 
 {
     if(!inited){
@@ -601,7 +681,9 @@ void loop()
 }
 
 
-
+/**
+ * Resets the state of the device by resetting configuration data and erasing eeprom
+ */
 void doReset()
 {
   conf.relay = 0;
@@ -623,6 +705,10 @@ void doReset()
 
 
 
+
+/**
+ * Initializing
+ */
 void initSettings()
 {
   readSettings();
@@ -659,6 +745,9 @@ void initSettings()
 
 
 
+/**
+ * Erases eeprom of all settings
+ */
 void eraseSettings()
 {
   debugPrint("Erasing eeprom...");
@@ -670,6 +759,10 @@ void eraseSettings()
 
 
 
+
+/**
+ * Writes active configuration  to eeprom
+ */
 void writeSettings() 
 {
   eeAddress = 0;
@@ -712,6 +805,9 @@ void writeSettings()
 }
 
 
+/**
+ * Write string to eeprom
+ */
 void writeEEPROM(int startAdr, int len, char* writeString) {
   //yield();
   for (int i = 0; i < len; i++) {
@@ -720,6 +816,11 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
 }
 
 
+
+
+/**
+ * Reads last written configuration object from eeprom
+ */
 void readSettings() 
 {
   eeAddress = 0;
@@ -760,6 +861,9 @@ void readSettings()
 
 
 
+/**
+ * Reads string from eeprom
+ */
 void readEEPROM(int startAdr, int maxLength, char* dest) {
 
   for (int i = 0; i < maxLength; i++) {
@@ -768,6 +872,11 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
 }
 
 
+
+
+/**
+ * Prints message to serial
+ */
 void debugPrint(String message){
   if(debug){
     Serial.println(message);
