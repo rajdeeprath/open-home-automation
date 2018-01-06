@@ -31,7 +31,7 @@ boolean LIQUID_LEVEL_OK = true;
 boolean RELAY_ON;
 int pump_relay_status;
 boolean PUMP_CONNECTION_ON;
-
+boolean PUMP_RUN_REQUEST_TOKEN = false;
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"},\"getAllSwitches\":{\"method\":\"get\",\"path\":\"\/switch\/all\"},\"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
@@ -171,14 +171,18 @@ void toggleSwitch()
 
   if(conf.relay == 0)
   {
+    PUMP_RUN_REQUEST_TOKEN = true;
+    
     //relayOn();
-    switchOnCompositeRelay();
+    runPump();
     switch1state="STATE=ON";
   }
   else
   {
+    PUMP_RUN_REQUEST_TOKEN = false;
+    
     //relayOff();
-    switchOffCompositeRelay();
+    stopPump();
     switch1state="STATE=OFF";
   }
 
@@ -191,9 +195,11 @@ void toggleSwitch()
 void switchAOn()
 {
   checkAndRespondToRelayConditionSafeGuard();
+
+  PUMP_RUN_REQUEST_TOKEN = true;
   
   //relayOn();
-  switchOnCompositeRelay();
+  runPump();
     
   server->send(200, "text/plain", "STATE=ON");
 }
@@ -204,9 +210,11 @@ void switchAOn()
 void switchAOff()
 {
   checkAndRespondToRelayConditionSafeGuard();
+
+  PUMP_RUN_REQUEST_TOKEN = false;
   
   //relayOff();
-  switchOffCompositeRelay();
+  stopPump();
 
   server->send(200, "text/plain", "STATE=OFF");
 }
@@ -329,6 +337,35 @@ void notifyURL()
 }
 
 
+
+/**
+ * Start the pump operation by switching on the relay
+ */
+void runPump()
+{
+  switchOnCompositeRelay();
+}
+
+
+/**
+ * Stops pump by switching off the relay
+ */
+void stopPump()
+{
+  switchOffCompositeRelay();
+}
+
+
+
+/**
+ * Prevents accidental runs of the pump controller under unexpected component failures or runaways logic.
+ */
+void protectUnauthorizedRun()
+{
+  
+}
+
+
 /**
  * Captures the actual pump connection status. This is enabled only if the composite relay is on and the AC current is flowing through it.
  * The BT100 current sensor will transmit a +3.3v dc to the microcontroller to indicate a working circuit.
@@ -341,6 +378,7 @@ void checkPumpRunningStatus(){
     {
       if(PUMP_CONNECTION_ON){
         PUMP_CONNECTION_ON = false;
+        debugPrint("Pump stopped!");
 
         // notify status
         notifyURL();
@@ -349,6 +387,7 @@ void checkPumpRunningStatus(){
     else if(pump_relay_status == 1){
       if(!PUMP_CONNECTION_ON){
         PUMP_CONNECTION_ON = true;
+        debugPrint("Pump started!");
 
         // notify status
         notifyURL();
@@ -416,7 +455,7 @@ void relayConditionSafeGuard()
     if(!LIQUID_LEVEL_OK || timeover)
     {
       //relayOff();
-      switchOffCompositeRelay();
+      stopPump();
     }
   }
 }
