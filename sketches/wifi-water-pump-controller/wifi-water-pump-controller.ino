@@ -15,7 +15,7 @@
 
 const String NAME="HMU-PC-001";
 
-int DEFAULT_RUNTIME = 10;
+int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
 long wait_time = 5000;
@@ -30,9 +30,13 @@ String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean RELAY_ON;
 int pump_relay_status;
-boolean PUMP_CONNECTION_ON;
+boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
-String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"},\"getAllSwitches\":{\"method\":\"get\",\"path\":\"\/switch\/all\"},\"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+long last_notify = 0;
+long NOTIFICATION_DELAY = 10000;
+boolean RED_FLAG = false;
+boolean PIN_ERROR = false;
+String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    int relay;
@@ -357,26 +361,41 @@ void setNotifyURL()
  */
 void notifyURL()
 {
-  if (!posting)
-  {
-    readSettings();
+  notifyURL("");
+}
 
-    posting = true;
-    debugPrint("Sending url call");
 
-    http.begin(String(conf.endpoint));
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    int httpCode = http.POST("pump=" + String(conf.relay));
-    String payload = http.getString();
-
-    debugPrint(String(httpCode));
-    //debugPrint(String(payload));
-
-    http.end();
-
-    posting = false;
-  }
+/**
+ * Send http(s) notification to remote url with appropriate parameters and custom message
+ */
+void notifyURL(String message)
+{
+  if(millis() - last_notify > NOTIFICATION_DELAY)
+  {    
+    if (!posting)
+    {
+      debugPrint("Running notification service with message " + message);
+      
+      last_notify = millis();
+      readSettings();
+  
+      posting = true;
+      debugPrint("Sending url call");
+  
+      http.begin(String(conf.endpoint));
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  
+      //int httpCode = http.POST("pump=" + String(conf.relay) + "&runtime" + String(conf.relay_runtime) + "&message=" + message);
+      //String payload = http.getString();
+  
+      //debugPrint(String(httpCode));
+      //debugPrint(String(payload));
+  
+      http.end();
+  
+      posting = false;
+    }
+  }  
 }
 
 
@@ -403,9 +422,45 @@ void stopPump()
 /**
  * Prevents accidental runs of the pump controller under unexpected component failures or runaways logic.
  */
-void protectUnauthorizedRun()
+void preventUnauthorizedRun()
 {
-  
+  String msg;
+
+  /* Check for possible fault */    
+  if(!PUMP_RUN_REQUEST_TOKEN)
+  {
+    if(PUMP_CONNECTION_ON) // Check feedback
+    {
+      RED_FLAG = true;
+      msg  = "WARNING : Pump connection is on without request!!. Attempting to block";
+    }
+    else if(isCompositeRelayOn()) // Check relay pin(s) state(s)
+    {
+      RED_FLAG = true;
+      msg  = "WARNING : Pump relay state is on without request!!. Attempting to block";
+    }
+    else if(PIN_ERROR)
+    {
+      RED_FLAG = true;
+      msg  = "WARNING : There seems to be a pin error. One or more relay pins are in an inconsistent state!!.";
+    }
+  }
+  else
+  {
+    RED_FLAG = false;
+  }
+
+
+
+  /* Take protective measure if any */
+  if(RED_FLAG)
+  {
+    debugPrint(msg);      
+    notifyURL(msg);  
+
+    // attempt to stop pump  
+    stopPump();
+  }
 }
 
 
@@ -414,26 +469,30 @@ void protectUnauthorizedRun()
  * The BT100 current sensor will transmit a +3.3v dc to the microcontroller to indicate a working circuit.
  */
 void checkPumpRunningStatus(){
-  
-    pump_relay_status = digitalRead(PUMP_SENSOR); 
+
+    String msg;
+    //debugPrint("isPumpRunning() = " + String(isPumpRunning()));
     
-    if(pump_relay_status == 0)
+    if(!isPumpRunning())
     {
       if(PUMP_CONNECTION_ON){
         PUMP_CONNECTION_ON = false;
-        debugPrint("Pump stopped!");
-
+        msg = "Pump stopped!";
+        debugPrint(msg);
+        
         // notify status
-        notifyURL();
+        notifyURL(msg);
       }
     }
-    else if(pump_relay_status == 1){
-      if(!PUMP_CONNECTION_ON){
+    else
+    {
+      if(!PUMP_CONNECTION_ON){        
         PUMP_CONNECTION_ON = true;
-        debugPrint("Pump started!");
+        msg = "Pump running!";
+        debugPrint(msg);
 
         // notify status
-        notifyURL();
+        notifyURL(msg);
       }
     }
 }
@@ -480,7 +539,6 @@ void checkAndRespondToRelayConditionSafeGuard()
 void relayConditionSafeGuard()
 {
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);  
-  debugPrint(String(liquidLevelSensorReadIn) + "LIQUID_LEVEL_OK = " + String(LIQUID_LEVEL_OK));
   if(liquidLevelSensorReadIn >= liquidLevelSensorReadInThreshold) // open magnetic switch
   {
     if(LIQUID_LEVEL_OK)
@@ -549,17 +607,24 @@ void switchOnCompositeRelay()
 
 
 /**
- * Checks composite relay state by reading the control pin(s)
+ * Checks composite relay state by reading the control pin(s). Both relays are required to switch the device on.
  */
 boolean isCompositeRelayOn()
 {
-  int relay_1_state = digitalRead(RELAY1_READER);
-  int relay_2_state = digitalRead(RELAY2_READER);
+  int relay_1_state = digitalRead(RELAY1_READER); // low by default => off
+  int relay_2_state = digitalRead(RELAY2_READER); // high by default => off
 
-  if(relay_2_state == 1 && relay_1_state == 0){
+
+  if(relay_1_state == 1 && relay_2_state == 0)
+  {
     return true;
   }
-  else{
+  else
+  {
+    if((relay_1_state == 0 && relay_2_state == 0) || (relay_1_state == 1 && relay_2_state == 1)){
+      PIN_ERROR = true;
+    }
+    
     return false;
   }
 }
@@ -668,8 +733,9 @@ void loop()
     }
     else
     {
-      checkPumpRunningStatus();
+      checkPumpRunningStatus();      
       relayConditionSafeGuard();
+      preventUnauthorizedRun();
       
       delay(3);
 
