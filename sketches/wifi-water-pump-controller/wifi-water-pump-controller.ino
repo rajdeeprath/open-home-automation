@@ -3,6 +3,7 @@
 #include <ESP8266WebServer.h>
 #include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
 #include <EEPROM.h>
+#include <ESP8266HTTPClient.h>
 
 #define RELAY1 4 
 #define RELAY2 5 
@@ -28,6 +29,8 @@ int liquidLevelSensorReadInThreshold = 950;
 String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean RELAY_ON;
+int pump_relay_status;
+boolean PUMP_CONNECTION_ON;
 
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"},\"getAllSwitches\":{\"method\":\"get\",\"path\":\"\/switch\/all\"},\"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -48,6 +51,9 @@ Settings conf = {};
 
 WiFiManager wifiManager;
 std::unique_ptr<ESP8266WebServer> server;
+
+HTTPClient http;
+boolean posting;
 
 void handleRoot() {
   server->send(200, "application/json", capailities);
@@ -298,6 +304,59 @@ void setNotifyURL()
 
 
 
+void notifyURL()
+{
+  if (!posting)
+  {
+    readSettings();
+
+    posting = true;
+    debugPrint("Sending url call");
+
+    http.begin(String(conf.endpoint));
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    int httpCode = http.POST("pump=" + String(conf.relay));
+    String payload = http.getString();
+
+    debugPrint(String(httpCode));
+    //debugPrint(String(payload));
+
+    http.end();
+
+    posting = false;
+  }
+}
+
+
+/**
+ * Captures the actual pump connection status. This is enabled only if the composite relay is on and the AC current is flowing through it.
+ * The BT100 current sensor will transmit a +3.3v dc to the microcontroller to indicate a working circuit.
+ */
+void checkPumpRunningStatus(){
+  
+    pump_relay_status = digitalRead(PUMP_SENSOR); 
+    
+    if(pump_relay_status == 0)
+    {
+      if(PUMP_CONNECTION_ON){
+        PUMP_CONNECTION_ON = false;
+
+        // notify status
+        notifyURL();
+      }
+    }
+    else if(pump_relay_status == 1){
+      if(!PUMP_CONNECTION_ON){
+        PUMP_CONNECTION_ON = true;
+
+        // notify status
+        notifyURL();
+      }
+    }
+}
+
+
 void ledOn()
 {
   conf.led=1;
@@ -465,6 +524,7 @@ void setup() {
   server->on("/notify/set", setNotify);
   server->on("/notify/url", getNotifyURL);
   server->on("/notify/url/set", setNotifyURL);
+  //server->on("/notify/url/send", notifyURL);
   
   server->onNotFound(handleNotFound);
   server->begin();
@@ -489,7 +549,9 @@ void loop()
     }
     else
     {
+      checkPumpRunningStatus();
       relayConditionSafeGuard();
+      
       delay(3);
 
       if(millis() - system_start_time > wait_time)
