@@ -31,6 +31,7 @@ boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
 
 long last_notify = 0;
+long accidentGuardLastRun = 0;
 boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
 long time_over_check;
@@ -39,6 +40,7 @@ long INIT_DELAY = 15000;
 long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 long OPERATION_FEEDBACK_CHECK_DELAY = 3000;
+long ACCIDENT_GUARD_RUN_DELAY = 5000;
 
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -374,6 +376,8 @@ void notifyURL(String message)
 {
   if(millis() - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
+    //debugPrint("conf.notify " + String(conf.notify));
+    
     if (!posting && conf.notify == 1)
     {
       debugPrint("Running notification service with message " + message);
@@ -455,13 +459,17 @@ void preventUnauthorizedRun()
 
     long lastRunElapsedTime = (millis() - conf.relay_start);
     long lastStopElapsedTime = (millis() - conf.relay_stop);
+    boolean canCheck = ((lastRunElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (lastStopElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (millis() - accidentGuardLastRun > ACCIDENT_GUARD_RUN_DELAY));
 
-
-    if((lastRunElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (lastStopElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY))
+    if(canCheck)
     {
+        //debugPrint("Checking to see if a accidental run condition exists...");
+        
         /* Check for possible fault */    
         if(!PUMP_RUN_REQUEST_TOKEN)
         {
+          debugPrint("Running accident prevention & warning routine checks!!");         
+          
           if(PUMP_CONNECTION_ON) // Check feedback
           {
             RED_FLAG = true;
@@ -482,23 +490,19 @@ void preventUnauthorizedRun()
         {
           RED_FLAG = false;
         }
+
+
   
         /* Take protective measure if any */
         if(RED_FLAG)
         {
           debugPrint(msg);      
-          notifyURL(msg);  
-          
-          // Force stop relay via control pins
-          if(conf.relay == 1)
-          {
-            stopPump(); // normally
-          }
-          else
-          {
-            switchOffCompositeRelay(); // abnormally
-          }
+          notifyURL(msg); 
+
+          RED_FLAG = false;
         } 
+
+        accidentGuardLastRun = millis();
     }   
 }
 
@@ -656,6 +660,7 @@ boolean isCompositeRelayOn()
   int relay_1_state = digitalRead(RELAY1_READER); // low by default => off
   int relay_2_state = digitalRead(RELAY2_READER); // high by default => off
 
+  PIN_ERROR = false; // assume no pin error till we evaluate
 
   if(relay_1_state == 1 && relay_2_state == 0)
   {
@@ -718,15 +723,17 @@ boolean isPumpRunningSim()
  */
 void setup() {
 
-  Serial.begin(9600);
+  Serial.begin(9600);  
   
   // Check for reset and do reset routine
-  readSettings();
-  
+  readSettings();  
   if(conf.reset == 1){
     debugPrint("Reset flag detected!");    
     doReset();
   }
+
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, LOW);  
 
   ledOn();
   delay(INIT_DELAY);
@@ -741,9 +748,6 @@ void setup() {
   pinMode(RELAY1_READER, INPUT);
   pinMode(RELAY2_READER, INPUT);
   pinMode(LIQUID_LEVEL_SENSOR, INPUT);
-
-  pinMode(LED, OUTPUT);
-  digitalWrite(LED, LOW);  
 
   pinMode(PUMP_SENSOR, INPUT);
 
