@@ -32,9 +32,11 @@ boolean PUMP_RUN_REQUEST_TOKEN = false;
 long last_notify = 0;
 long last_run = 0;
 long NOTIFICATION_DELAY = 10000;
+long FEEDBACK_CHECK_DELAY = 2000;
 boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
 long PUMP_RUN_DELAY = 30000;
+long INIT_DELAY = 15000;
 long time_over_check;
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -375,18 +377,17 @@ void notifyURL(String message)
       debugPrint("Running notification service with message " + message);
       
       last_notify = millis();
-      readSettings();
+      //readSettings();
   
       posting = true;
-      //debugPrint("Sending url call");
   
       http.begin(String(conf.endpoint));
       http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   
-      //int httpCode = http.POST("pump=" + String(conf.relay) + "&runtime" + String(conf.relay_runtime) + "&message=" + message);
+      int httpCode = http.POST("pump=" + String(conf.relay) + "&runtime" + String(conf.relay_runtime) + "&message=" + message);
       //String payload = http.getString();
   
-      //debugPrint(String(httpCode));
+      debugPrint(String(httpCode));
       //debugPrint(String(payload));
   
       http.end();
@@ -407,18 +408,11 @@ void runPump()
 
    if(conf.relay == 0)
    {
-      if(millis() <= PUMP_RUN_DELAY)
+      if(millis() - last_run > PUMP_RUN_DELAY)
       {
-        msg = "Device has been initialized recently!. Please try after some time.";
-        debugPrint(msg);
-        //notifyURL(msg);
-      }
-      else if(millis() - last_run > PUMP_RUN_DELAY)
-      {
-       debugPrint("Starting pump!");
-        
-       switchOnCompositeRelay();    
-       last_run = millis();
+        debugPrint("Starting pump!");
+        switchOnCompositeRelay();    
+        last_run = millis();
       }
       else
       {
@@ -429,9 +423,9 @@ void runPump()
    }
    else
    {
-     msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
-     debugPrint(msg);
-     notifyURL(msg);
+        msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
+        debugPrint(msg);
+        notifyURL(msg);
    }
 }
 
@@ -456,43 +450,41 @@ void stopPump()
  */
 void preventUnauthorizedRun()
 {
-  String msg;
-
-  /* Check for possible fault */    
-  if(!PUMP_RUN_REQUEST_TOKEN)
-  {
-    if(PUMP_CONNECTION_ON) // Check feedback
-    {
-      RED_FLAG = true;
-      msg  = "WARNING : Pump connection is on without request!!. Attempting to block";
-    }
-    else if(isCompositeRelayOn()) // Check relay pin(s) state(s)
-    {
-      RED_FLAG = true;
-      msg  = "WARNING : Pump relay state is on without request!!. Attempting to block";
-    }
-    else if(PIN_ERROR)
-    {
-      RED_FLAG = true;
-      msg  = "WARNING : There seems to be a pin error. One or more relay pins are in an inconsistent state!!.";
-    }
-  }
-  else
-  {
-    RED_FLAG = false;
-  }
-
-
-
-  /* Take protective measure if any */
-  if(RED_FLAG)
-  {
-    debugPrint(msg);      
-    notifyURL(msg);  
+    String msg;
     
-    // Force stop relay via control pins
-    switchOffCompositeRelay();
-  }
+    /* Check for possible fault */    
+    if(!PUMP_RUN_REQUEST_TOKEN)
+    {
+      if(PUMP_CONNECTION_ON) // Check feedback
+      {
+        RED_FLAG = true;
+        msg  = "WARNING : Pump connection is on without request!!. Attempting to block";
+      }
+      else if(isCompositeRelayOn()) // Check relay pin(s) state(s)
+      {
+        RED_FLAG = true;
+        msg  = "WARNING : Pump relay state is on without request!!. Attempting to block";
+      }
+      else if(PIN_ERROR)
+      {
+        RED_FLAG = true;
+        msg  = "WARNING : There seems to be a pin error. One or more relay pins are in an inconsistent state!!.";
+      }
+    }
+    else
+    {
+      RED_FLAG = false;
+    }
+  
+    /* Take protective measure if any */
+    if(RED_FLAG)
+    {
+      debugPrint(msg);      
+      notifyURL(msg);  
+      
+      // Force stop relay via control pins
+      switchOffCompositeRelay();
+    }
 }
 
 
@@ -681,6 +673,28 @@ boolean isPumpRunning()
 
 
 
+/*
+boolean isPumpRunningSim()
+{
+  boolean result = false;
+  
+  if(conf.relay == 1)
+  {
+    if(millis() - last_run > 3000)
+    {
+      result = true;
+    }
+  }
+  else
+  {
+    result = false;
+  }
+  
+  return result;
+}
+*/
+
+
 
 /**
  * Setup
@@ -688,16 +702,16 @@ boolean isPumpRunning()
 void setup() {
 
   Serial.begin(9600);
-
-  // start eeprom
-  EEPROM.begin(512);
-
+  
   // Check for reset and do reset routine
   readSettings();
+  
   if(conf.reset == 1){
     debugPrint("Reset flag detected!");    
     doReset();
   }
+
+  delay(INIT_DELAY);
 
   pinMode(RELAY1, OUTPUT); 
   digitalWrite(RELAY1, LOW);
@@ -726,7 +740,6 @@ void setup() {
 
   server->on("/", handleRoot);
   server->on("/reset", handleReset);
-
   server->on("/switch/1", readSwitch);
   server->on("/switch/1/set", toggleSwitch);
   server->on("/switch/1/set/on", switchAOn);
@@ -737,7 +750,6 @@ void setup() {
   server->on("/notify/set", setNotify);
   server->on("/notify/url", getNotifyURL);
   server->on("/notify/url/set", setNotifyURL);
-  //server->on("/notify/url/send", notifyURL);
   
   server->onNotFound(handleNotFound);
   server->begin();
@@ -770,7 +782,7 @@ void loop()
     {
       checkPumpRunningStatus();      
       relayConditionSafeGuard();
-      preventUnauthorizedRun();
+      //preventUnauthorizedRun();
       
       delay(3);
 
@@ -851,11 +863,16 @@ void initSettings()
  */
 void eraseSettings()
 {
+  EEPROM.begin(512);
+  
   debugPrint("Erasing eeprom...");
   
   for (int i = 0; i < 512; i++){
     EEPROM.write(i, 0);
   }
+
+  EEPROM.commit();
+  EEPROM.end();
 }
 
 
@@ -866,6 +883,8 @@ void eraseSettings()
  */
 void writeSettings() 
 {
+  EEPROM.begin(512);
+  
   eeAddress = 0;
   conf.lastupdate = millis();
 
@@ -891,6 +910,8 @@ void writeSettings()
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
   EEPROM.commit();
+
+  EEPROM.end();
   
   debugPrint("Conf saved");
   debugPrint(String(conf.relay));
@@ -924,6 +945,8 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
  */
 void readSettings() 
 {
+  EEPROM.begin(512);
+  
   eeAddress = 0;
   
   conf.relay = EEPROM.read(eeAddress);
@@ -947,6 +970,8 @@ void readSettings()
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
+  EEPROM.end();
+
   debugPrint("Conf read");
   debugPrint(String(conf.relay));
   debugPrint(String(conf.relay_runtime));
@@ -957,7 +982,7 @@ void readSettings()
   debugPrint(String(conf.reset));
   debugPrint(String(conf.notify));
   debugPrint(String(conf.endpoint_length));
-  debugPrint(String(conf.endpoint));
+  debugPrint(String(conf.endpoint));  
 }
 
 
