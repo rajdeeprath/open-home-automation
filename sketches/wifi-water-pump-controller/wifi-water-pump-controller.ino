@@ -405,7 +405,13 @@ void notifyURL(String message)
  */
 void runPump()
 {
-  switchOnCompositeRelay();
+  if(!RELAY_ON)
+  {
+    debugPrint("Starting pump!");
+    
+    switchOnCompositeRelay();
+    RELAY_ON = true;
+  }
 }
 
 
@@ -414,7 +420,13 @@ void runPump()
  */
 void stopPump()
 {
-  switchOffCompositeRelay();
+  if(RELAY_ON)
+  { 
+    debugPrint("Stopping pump!");
+    
+    switchOffCompositeRelay();
+    RELAY_ON = false;
+  }
 }
 
 
@@ -457,9 +469,9 @@ void preventUnauthorizedRun()
   {
     debugPrint(msg);      
     notifyURL(msg);  
-
-    // attempt to stop pump  
-    stopPump();
+    
+    // Force stop relay via control pins
+    switchOffCompositeRelay();
   }
 }
 
@@ -471,7 +483,6 @@ void preventUnauthorizedRun()
 void checkPumpRunningStatus(){
 
     String msg;
-    //debugPrint("isPumpRunning() = " + String(isPumpRunning()));
     
     if(!isPumpRunning())
     {
@@ -566,6 +577,10 @@ void relayConditionSafeGuard()
     
     if(!LIQUID_LEVEL_OK || timeover)
     {
+      if(PUMP_RUN_REQUEST_TOKEN){
+        PUMP_RUN_REQUEST_TOKEN = false;
+      }
+      
       //relayOff();
       stopPump();
     }
@@ -579,13 +594,12 @@ void relayConditionSafeGuard()
  */
 void switchOffCompositeRelay()
 {
-  if(RELAY_ON){    
+    debugPrint("Turning off control pins");
+    
     conf.relay=0;
     conf.relay_stop = millis();
     digitalWrite(RELAY1, LOW);
     digitalWrite(RELAY2, HIGH);
-    RELAY_ON = false;
-  }
 }
 
 
@@ -595,13 +609,13 @@ void switchOffCompositeRelay()
  */
 void switchOnCompositeRelay()
 {
-  if(!RELAY_ON){
+    debugPrint("Turning on control pins");
+  
     conf.relay=1;
     conf.relay_start = millis();    
     digitalWrite(RELAY1, HIGH);
     digitalWrite(RELAY2, LOW);
     RELAY_ON = true;
-  }
 }
 
 
