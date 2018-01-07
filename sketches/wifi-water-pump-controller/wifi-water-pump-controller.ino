@@ -35,6 +35,7 @@ long NOTIFICATION_DELAY = 10000;
 boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
 long PUMP_RUN_DELAY = 30000;
+long time_over_check;
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
@@ -239,7 +240,6 @@ void switchAOff()
 
   PUMP_RUN_REQUEST_TOKEN = false;
   
-  //relayOff();
   stopPump();
 
   server->send(200, "text/plain", "STATE=OFF");
@@ -378,7 +378,7 @@ void notifyURL(String message)
       readSettings();
   
       posting = true;
-      debugPrint("Sending url call");
+      //debugPrint("Sending url call");
   
       http.begin(String(conf.endpoint));
       http.addHeader("Content-Type", "application/x-www-form-urlencoded");
@@ -407,7 +407,13 @@ void runPump()
 
    if(conf.relay == 0)
    {
-      if(millis() - last_run > PUMP_RUN_DELAY)
+      if(millis() <= PUMP_RUN_DELAY)
+      {
+        msg = "Device has been initialized recently!. Please try after some time.";
+        debugPrint(msg);
+        //notifyURL(msg);
+      }
+      else if(millis() - last_run > PUMP_RUN_DELAY)
       {
        debugPrint("Starting pump!");
         
@@ -583,11 +589,14 @@ void relayConditionSafeGuard()
 
 
   /****************************************************************/
+  time_over_check = millis();
 
   if(conf.relay == 1)
   {
     max_runtime = conf.relay_runtime * 1000;
-    timeover = ((millis() - conf.relay_start) > max_runtime);
+    timeover = ((time_over_check - conf.relay_start) > max_runtime);
+
+    //debugPrint("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
     
     if(!LIQUID_LEVEL_OK || timeover)
     {
