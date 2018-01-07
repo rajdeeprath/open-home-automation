@@ -19,7 +19,6 @@ int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
 long wait_time = 5000;
-boolean resetFlag=false;
 boolean debug=true;
 boolean inited = false;
 boolean timeover;
@@ -29,7 +28,6 @@ int liquidLevelSensorReadInThreshold = 950;
 String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean RELAY_ON;
-int pump_relay_status;
 boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
 long last_notify = 0;
@@ -405,12 +403,21 @@ void notifyURL(String message)
  */
 void runPump()
 {
-  if(!RELAY_ON)
+  if(!PUMP_RUN_REQUEST_TOKEN)
   {
-    debugPrint("Starting pump!");
-    
-    switchOnCompositeRelay();
-    RELAY_ON = true;
+    if(!RELAY_ON)
+    {
+      debugPrint("Starting pump!");
+      
+      switchOnCompositeRelay();
+      RELAY_ON = true;
+    }
+  }
+  else
+  {
+    String msg = "Pump cannot be started since it was already started and has not stopped automatically!";
+    debugPrint(msg);
+    notifyURL(msg);
   }
 }
 
