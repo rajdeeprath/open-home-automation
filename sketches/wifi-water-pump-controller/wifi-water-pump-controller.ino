@@ -29,15 +29,17 @@ String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
+
 long last_notify = 0;
-long last_run = 0;
-long NOTIFICATION_DELAY = 10000;
-long FEEDBACK_CHECK_DELAY = 2000;
 boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
-long PUMP_RUN_DELAY = 30000;
-long INIT_DELAY = 15000;
 long time_over_check;
+
+long INIT_DELAY = 15000;
+long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
+long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
+long OPERATION_FEEDBACK_CHECK_DELAY = 3000;
+
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
@@ -279,7 +281,7 @@ void setNotify()
     {
       conf.notify = notify;
       writeSettings();
-      server->send(200, "text/plain", "notify=" + String(conf.notify));      
+      server->send(200, "text/plain", "NOTIFY=" + String(conf.notify));      
     }
     else
     {
@@ -370,9 +372,9 @@ void notifyURL()
  */
 void notifyURL(String message)
 {
-  if(millis() - last_notify > NOTIFICATION_DELAY)
+  if(millis() - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
-    if (!posting)
+    if (!posting && conf.notify == 1)
     {
       debugPrint("Running notification service with message " + message);
       
@@ -408,11 +410,10 @@ void runPump()
 
    if(conf.relay == 0)
    {
-      if(millis() - last_run > PUMP_RUN_DELAY)
+      if(millis() - conf.relay_start > CONSECUTIVE_PUMP_RUN_DELAY)
       {
         debugPrint("Starting pump!");
-        switchOnCompositeRelay();    
-        last_run = millis();
+        switchOnCompositeRelay();
       }
       else
       {
@@ -451,40 +452,54 @@ void stopPump()
 void preventUnauthorizedRun()
 {
     String msg;
-    
-    /* Check for possible fault */    
-    if(!PUMP_RUN_REQUEST_TOKEN)
+
+    long lastRunElapsedTime = (millis() - conf.relay_start);
+    long lastStopElapsedTime = (millis() - conf.relay_stop);
+
+
+    if((lastRunElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (lastStopElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY))
     {
-      if(PUMP_CONNECTION_ON) // Check feedback
-      {
-        RED_FLAG = true;
-        msg  = "WARNING : Pump connection is on without request!!. Attempting to block";
-      }
-      else if(isCompositeRelayOn()) // Check relay pin(s) state(s)
-      {
-        RED_FLAG = true;
-        msg  = "WARNING : Pump relay state is on without request!!. Attempting to block";
-      }
-      else if(PIN_ERROR)
-      {
-        RED_FLAG = true;
-        msg  = "WARNING : There seems to be a pin error. One or more relay pins are in an inconsistent state!!.";
-      }
-    }
-    else
-    {
-      RED_FLAG = false;
-    }
+        /* Check for possible fault */    
+        if(!PUMP_RUN_REQUEST_TOKEN)
+        {
+          if(PUMP_CONNECTION_ON) // Check feedback
+          {
+            RED_FLAG = true;
+            msg  = "WARNING : Pump connection is on without request!!. Attempting to block";
+          }
+          else if(isCompositeRelayOn()) // Check relay pin(s) state(s)
+          {
+            RED_FLAG = true;
+            msg  = "WARNING : Pump relay state is on without request!!. Attempting to block";
+          }
+          else if(PIN_ERROR)
+          {
+            RED_FLAG = true;
+            msg  = "WARNING : There seems to be a pin error. One or more relay pins are in an inconsistent state!!.";
+          }
+        }
+        else
+        {
+          RED_FLAG = false;
+        }
   
-    /* Take protective measure if any */
-    if(RED_FLAG)
-    {
-      debugPrint(msg);      
-      notifyURL(msg);  
-      
-      // Force stop relay via control pins
-      switchOffCompositeRelay();
-    }
+        /* Take protective measure if any */
+        if(RED_FLAG)
+        {
+          debugPrint(msg);      
+          notifyURL(msg);  
+          
+          // Force stop relay via control pins
+          if(conf.relay == 1)
+          {
+            stopPump(); // normally
+          }
+          else
+          {
+            switchOffCompositeRelay(); // abnormally
+          }
+        } 
+    }   
 }
 
 
@@ -496,7 +511,7 @@ void checkPumpRunningStatus(){
 
     String msg;
     
-    if(!isPumpRunning())
+    if(!isPumpRunningSim())
     {
       if(PUMP_CONNECTION_ON){
         PUMP_CONNECTION_ON = false;
@@ -674,13 +689,15 @@ boolean isPumpRunning()
 
 
 /*
+ *Simulates pump running after a few seconds of relay start 
+ */
 boolean isPumpRunningSim()
 {
   boolean result = false;
   
   if(conf.relay == 1)
   {
-    if(millis() - last_run > 3000)
+    if(millis() - conf.relay_start > 3000)
     {
       result = true;
     }
@@ -692,7 +709,7 @@ boolean isPumpRunningSim()
   
   return result;
 }
-*/
+
 
 
 
@@ -711,7 +728,9 @@ void setup() {
     doReset();
   }
 
+  ledOn();
   delay(INIT_DELAY);
+  ledOff();
 
   pinMode(RELAY1, OUTPUT); 
   digitalWrite(RELAY1, LOW);
@@ -782,7 +801,7 @@ void loop()
     {
       checkPumpRunningStatus();      
       relayConditionSafeGuard();
-      //preventUnauthorizedRun();
+      preventUnauthorizedRun();
       
       delay(3);
 
