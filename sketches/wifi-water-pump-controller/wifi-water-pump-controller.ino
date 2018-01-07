@@ -27,13 +27,14 @@ int liquidLevelSensorReadIn = 0;
 int liquidLevelSensorReadInThreshold = 950;
 String switch1state;
 boolean LIQUID_LEVEL_OK = true;
-boolean RELAY_ON;
 boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
 long last_notify = 0;
+long last_run = 0;
 long NOTIFICATION_DELAY = 10000;
 boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
+long PUMP_RUN_DELAY = 30000;
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
@@ -192,7 +193,6 @@ void toggleSwitch()
   {
     PUMP_RUN_REQUEST_TOKEN = true;
     
-    //relayOn();
     runPump();
     switch1state="STATE=ON";
   }
@@ -200,7 +200,6 @@ void toggleSwitch()
   {
     PUMP_RUN_REQUEST_TOKEN = false;
     
-    //relayOff();
     stopPump();
     switch1state="STATE=OFF";
   }
@@ -218,11 +217,12 @@ void toggleSwitch()
 void switchAOn()
 {
   checkAndRespondToRelayConditionSafeGuard();
-
-  PUMP_RUN_REQUEST_TOKEN = true;
   
-  //relayOn();
-  runPump();
+  if(conf.relay == 0)
+  {
+    PUMP_RUN_REQUEST_TOKEN = true;
+    runPump();
+  }
     
   server->send(200, "text/plain", "STATE=ON");
 }
@@ -403,23 +403,32 @@ void notifyURL(String message)
  */
 void runPump()
 {
-  if(!PUMP_RUN_REQUEST_TOKEN)
-  {
-    if(!RELAY_ON)
-    {
-      debugPrint("Starting pump!");
-      
-      switchOnCompositeRelay();
-      RELAY_ON = true;
-    }
-  }
-  else
-  {
-    String msg = "Pump cannot be started since it was already started and has not stopped automatically!";
-    debugPrint(msg);
-    notifyURL(msg);
-  }
+   String msg;
+
+   if(conf.relay == 0)
+   {
+      if(millis() - last_run > PUMP_RUN_DELAY)
+      {
+       debugPrint("Starting pump!");
+        
+       switchOnCompositeRelay();    
+       last_run = millis();
+      }
+      else
+      {
+        msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
+        debugPrint(msg);
+        notifyURL(msg);
+      }
+   }
+   else
+   {
+     msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
+     debugPrint(msg);
+     notifyURL(msg);
+   }
 }
+
 
 
 /**
@@ -427,12 +436,10 @@ void runPump()
  */
 void stopPump()
 {
-  if(RELAY_ON)
+  if(conf.relay == 1)
   { 
     debugPrint("Stopping pump!");
-    
     switchOffCompositeRelay();
-    RELAY_ON = false;
   }
 }
 
@@ -588,7 +595,6 @@ void relayConditionSafeGuard()
         PUMP_RUN_REQUEST_TOKEN = false;
       }
       
-      //relayOff();
       stopPump();
     }
   }
@@ -622,7 +628,6 @@ void switchOnCompositeRelay()
     conf.relay_start = millis();    
     digitalWrite(RELAY1, HIGH);
     digitalWrite(RELAY2, LOW);
-    RELAY_ON = true;
 }
 
 
