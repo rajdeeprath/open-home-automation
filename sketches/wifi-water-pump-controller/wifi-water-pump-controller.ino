@@ -42,12 +42,17 @@ long lastBeepStateChange;
 boolean systemFault;
 boolean beeping;
 
+long lastPumpStartFeedbackTime;
+long lastPumpStopFeedbackTime;
+
 long INIT_DELAY = 15000;
 long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 long OPERATION_FEEDBACK_CHECK_DELAY = 2000;
 long ACCIDENT_GUARD_RUN_DELAY = 5000;
+long START_REQUEST_TOKEN_INVALIDATE_TIME = 10000;
 long BEEPER_DELAY = 1500;
+long PUMP_CONNECTION_SENSOR_NOISE_THRESHOLD = 2000;
 
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -226,8 +231,6 @@ void toggleSwitch()
   }
   else
   {
-    PUMP_RUN_REQUEST_TOKEN = false;
-    
     stopPump();
     switch1state="STATE=OFF";
   }
@@ -264,9 +267,6 @@ void switchAOn()
 void switchAOff()
 {
   checkAndRespondToRelayConditionSafeGuard();
-
-  PUMP_RUN_REQUEST_TOKEN = false;
-  
   stopPump();
 
   server->send(200, "text/plain", "STATE=OFF");
@@ -387,7 +387,7 @@ void setNotifyURL()
  */
 void notifyURL(String message)
 {
-  debugPrint("Preparing notification");
+  //debugPrint("Preparing notification");
   
   Notification notice = {};
   notice.relay = conf.relay;
@@ -407,10 +407,8 @@ void enqueueNotification(struct Notification notice)
 {
    notice.queue_time = millis();
 
-   debugPrint("Enquing notification");
-
    if(queue.count() < NOTICE_LIMIT){
-    debugPrint("Pushing notification to queue");
+    //debugPrint("Pushing notification to queue");
     queue.enqueue(notice);
    }
 }
@@ -427,9 +425,9 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      debugPrint("Running Notification service");
+      //debugPrint("Running Notification service");
 
-      debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      //debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
       Notification notice = queue.dequeue();
       notice.send_time = millis();
   
@@ -439,7 +437,7 @@ void dispatchPendingNotification()
       http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   
       int httpCode = http.POST("pump=" + String(notice.relay) + "&run_time" + String(notice.relay_runtime) + "&relay_start" + String(notice.relay_start) + "&relay_stop" + String(notice.relay_stop) + "&queue_time=" + String(notice.queue_time) + "&send_time=" + String(notice.send_time) +   "&message=" + notice.message);
-      debugPrint(String(httpCode));
+      //debugPrint(String(httpCode));
   
       http.end();
   
@@ -499,7 +497,7 @@ void stopPump()
 /**
  * Prevents accidental runs of the pump controller under unexpected component failures or runaways logic.
  */
-void preventUnauthorizedRun()
+void checkUnauthorizedRun()
 {
     String msg;
     boolean RED_FLAG;
@@ -509,12 +507,10 @@ void preventUnauthorizedRun()
 
     if(canCheck)
     {
-        //debugPrint("Checking to see if a accidental run condition exists...");
-        
         /* Check for possible fault */    
         if(!PUMP_RUN_REQUEST_TOKEN)
         {
-          debugPrint("Running accident prevention & warning routine checks!!");         
+          //debugPrint("Running accident prevention & warning routine checks!!");         
           
           if(PUMP_CONNECTION_ON) // Check feedback
           {
@@ -533,10 +529,9 @@ void preventUnauthorizedRun()
           }
         }
         else
-        {
+        {          
           RED_FLAG = false;
         }
-
         
   
         /* Take protective measure if any */
@@ -568,8 +563,11 @@ void checkPumpRunningStatus(){
     
     if(!isPumpRunning())
     {
-      if(PUMP_CONNECTION_ON){
+      if(PUMP_CONNECTION_ON)
+      {
         PUMP_CONNECTION_ON = false;
+        lastPumpStopFeedbackTime = millis();
+                
         msg = "Pump stopped!";
         debugPrint(msg);
         
@@ -579,13 +577,20 @@ void checkPumpRunningStatus(){
     }
     else
     {
-      if(!PUMP_CONNECTION_ON){        
-        PUMP_CONNECTION_ON = true;
-        msg = "Pump running!";
-        debugPrint(msg);
+      if(!PUMP_CONNECTION_ON)
+      {   
+        // Check for sensor noise / bad behaviour
+        if(millis() - lastPumpStopFeedbackTime > PUMP_CONNECTION_SENSOR_NOISE_THRESHOLD)     
+        {
+          PUMP_CONNECTION_ON = true;
+          lastPumpStartFeedbackTime = millis();
+        
+          msg = "Pump running!";
+          debugPrint(msg);
 
-        // notify status
-        notifyURL(msg);
+          // notify status
+          notifyURL(msg);
+        }        
       }
     }
 }
@@ -617,7 +622,7 @@ void ledOff()
 /**
  * Alternate beeps
  */
-void beepOnFault()
+void handleSystemFault()
 {
   if(systemFault)
   {
@@ -715,11 +720,7 @@ void relayConditionSafeGuard()
     //debugPrint("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
     
     if(!LIQUID_LEVEL_OK || timeover)
-    {
-      if(PUMP_RUN_REQUEST_TOKEN){
-        PUMP_RUN_REQUEST_TOKEN = false;
-      }
-      
+    {      
       stopPump();
     }
   }
@@ -789,6 +790,7 @@ boolean isCompositeRelayOn()
 boolean isPumpRunning()
 {
   int sensor_state = digitalRead(PUMP_SENSOR);
+  
   if(sensor_state == HIGH){
     return true;
   }else{
@@ -807,7 +809,7 @@ boolean isPumpRunningSim()
   
   if(conf.relay == 1)
   {
-    if(millis() - conf.relay_start > 3000)
+    if(millis() - conf.relay_start > 1000)
     {
       result = true;
     }
@@ -912,12 +914,13 @@ void loop()
     }
     else
     {
-      checkPumpRunningStatus();      
       relayConditionSafeGuard();
-      preventUnauthorizedRun();
-      beepOnFault();
+      checkPumpRunningStatus();
+      checkUnauthorizedRun();
+      handleSystemFault();
 
       dispatchPendingNotification();
+      invalidateUserRequest();
       
       delay(3);
 
@@ -926,6 +929,24 @@ void loop()
         server->handleClient();
       }
     }
+}
+
+
+
+/* Invalidate user request */
+void invalidateUserRequest()
+{
+  long lastRunElapsedTime = (millis() - conf.relay_start);
+  long lastStopElapsedTime = (millis() - conf.relay_stop);
+  boolean canReleaseToken = ((lastStopElapsedTime > START_REQUEST_TOKEN_INVALIDATE_TIME) && (conf.relay_stop > conf.relay_start) && conf.relay_start > 0 && conf.relay_stop > 0);
+  
+  if(canReleaseToken)
+  {
+        if(PUMP_RUN_REQUEST_TOKEN)  
+        {
+          PUMP_RUN_REQUEST_TOKEN = false;
+        }
+  }
 }
 
 
@@ -948,7 +969,6 @@ void doReset()
   eraseSettings();   
   delay(1000);
   wifiManager.resetSettings();
-  delay(1000);
 }
 
 
@@ -1143,5 +1163,6 @@ void debugPrint(String message){
     Serial.println(message);
   }
 }
+
 
 
