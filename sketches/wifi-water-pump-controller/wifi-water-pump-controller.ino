@@ -4,6 +4,7 @@
 #include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
+#include <QueueArray.h>
 
 #define RELAY1 4 
 #define RELAY2 5 
@@ -11,7 +12,10 @@
 #define RELAY2_READER 14
 #define LIQUID_LEVEL_SENSOR A0 
 #define LED 16 
+#define BEEPER 13 
 #define PUMP_SENSOR 15
+
+#define NOTICE_LIMIT 5
 
 const String NAME="HMU-PC-001";
 
@@ -32,15 +36,18 @@ boolean PUMP_RUN_REQUEST_TOKEN = false;
 
 long last_notify = 0;
 long accidentGuardLastRun = 0;
-boolean RED_FLAG = false;
 boolean PIN_ERROR = false;
 long time_over_check;
+long lastBeepStateChange;
+boolean systemFault;
+boolean beeping;
 
 long INIT_DELAY = 15000;
 long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
-long OPERATION_FEEDBACK_CHECK_DELAY = 3000;
+long OPERATION_FEEDBACK_CHECK_DELAY = 2000;
 long ACCIDENT_GUARD_RUN_DELAY = 5000;
+long BEEPER_DELAY = 1500;
 
 String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -56,6 +63,20 @@ struct Settings {
    int endpoint_length;
    char endpoint[80] = "";
 };
+
+struct Notification {
+   int relay;
+   int relay_runtime;
+   long relay_start;
+   long relay_stop;
+   char message[80] = "";
+   long queue_time;
+   long send_time;
+};
+
+QueueArray <Notification> queue;
+//struct Notification queue[NOTICE_LIMIT];
+//int queueIndex = 0;
 
 Settings conf = {};
 
@@ -255,7 +276,7 @@ void switchAOff()
 
 
 /**
- * Gets the http(s) notification permission
+ * Gets the http(s) Notification permission
  */
 void getNotify()
 {
@@ -269,7 +290,7 @@ void getNotify()
 
 
 /**
- * Sets the http(s) notification permission
+ * Sets the http(s) Notification permission
  */
 void setNotify()
 {
@@ -299,7 +320,7 @@ void setNotify()
 
 
 /**
- * Gets the http(s) notification url endpoint
+ * Gets the http(s) Notification url endpoint
  */
 void getNotifyURL()
 {
@@ -323,7 +344,7 @@ void getNotifyURL()
 
 
 /**
- * Sets the http(s) notification url endpoint
+ * Sets the http(s) Notification url endpoint
  */
 void setNotifyURL()
 {
@@ -360,47 +381,72 @@ void setNotifyURL()
 
 
 
-/**
- * Send http(s) notification to remote url with appropriate parameters
- */
-void notifyURL()
-{
-  notifyURL("");
-}
-
 
 /**
- * Send http(s) notification to remote url with appropriate parameters and custom message
+ * Add to Notification queue
  */
 void notifyURL(String message)
 {
+  debugPrint("Preparing notification");
+  
+  Notification notice = {};
+  notice.relay = conf.relay;
+  notice.relay_runtime = conf.relay_runtime;
+  notice.relay_start = conf.relay_start;
+  notice.relay_stop = conf.relay_stop;
+  message.toCharArray(notice.message, 80);
+  notice.queue_time = 0;
+  notice.send_time = 0;
+  
+  enqueueNotification(notice);
+}
+
+
+/* Add to Notification queue */
+void enqueueNotification(struct Notification notice)
+{
+   notice.queue_time = millis();
+
+   debugPrint("Enquing notification");
+
+   if(queue.count() < NOTICE_LIMIT){
+    debugPrint("Pushing notification to queue");
+    queue.enqueue(notice);
+   }
+}
+
+
+
+
+/**
+ * Send http(s) Notification to remote url with appropriate parameters and custom message
+ */
+void dispatchPendingNotification()
+{
   if(millis() - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
-    //debugPrint("conf.notify " + String(conf.notify));
-    
-    if (!posting && conf.notify == 1)
+    if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      debugPrint("Running notification service with message " + message);
-      
-      last_notify = millis();
-      //readSettings();
+      debugPrint("Running Notification service");
+
+      debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      Notification notice = queue.dequeue();
+      notice.send_time = millis();
   
       posting = true;
   
       http.begin(String(conf.endpoint));
       http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   
-      int httpCode = http.POST("pump=" + String(conf.relay) + "&runtime" + String(conf.relay_runtime) + "&message=" + message);
-      //String payload = http.getString();
-  
+      int httpCode = http.POST("pump=" + String(notice.relay) + "&run_time" + String(notice.relay_runtime) + "&relay_start" + String(notice.relay_start) + "&relay_stop" + String(notice.relay_stop) + "&queue_time=" + String(notice.queue_time) + "&send_time=" + String(notice.send_time) +   "&message=" + notice.message);
       debugPrint(String(httpCode));
-      //debugPrint(String(payload));
   
       http.end();
   
       posting = false;
+      last_notify = millis();
     }
-  }  
+  } 
 }
 
 
@@ -456,7 +502,7 @@ void stopPump()
 void preventUnauthorizedRun()
 {
     String msg;
-
+    boolean RED_FLAG;
     long lastRunElapsedTime = (millis() - conf.relay_start);
     long lastStopElapsedTime = (millis() - conf.relay_stop);
     boolean canCheck = ((lastRunElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (lastStopElapsedTime > OPERATION_FEEDBACK_CHECK_DELAY) && (millis() - accidentGuardLastRun > ACCIDENT_GUARD_RUN_DELAY));
@@ -491,16 +537,21 @@ void preventUnauthorizedRun()
           RED_FLAG = false;
         }
 
-
+        
   
         /* Take protective measure if any */
         if(RED_FLAG)
         {
+          systemFault = true;
+          
           debugPrint(msg);      
           notifyURL(msg); 
+        }
+        else
+        {
+          systemFault = false; 
+        }
 
-          RED_FLAG = false;
-        } 
 
         accidentGuardLastRun = millis();
     }   
@@ -561,6 +612,60 @@ void ledOff()
   digitalWrite(LED, LOW); 
 }
 
+
+
+/**
+ * Alternate beeps
+ */
+void beepOnFault()
+{
+  if(systemFault)
+  {
+    if(millis() - lastBeepStateChange > BEEPER_DELAY)
+    {
+      if(beeping)
+      {
+        beeperOff();
+      }
+      else
+      {
+        beeperOn();
+      }
+      
+      lastBeepStateChange = millis();
+    }    
+  }
+  else
+  {
+    if(beeping)
+    {
+      beeperOff();
+    }
+  }
+}
+
+
+
+
+/**
+ * Turns on beeper pin
+ */
+void beeperOn()
+{
+  digitalWrite(BEEPER, HIGH); 
+  beeping = true;
+}
+
+
+
+/**
+ * Turns off beeper pin
+ */
+void beeperOff()
+{
+  digitalWrite(BEEPER, LOW);
+  beeping = false; 
+}
 
 
 
@@ -723,7 +828,8 @@ boolean isPumpRunningSim()
  */
 void setup() {
 
-  Serial.begin(9600);  
+  Serial.begin(9600); 
+  queue.setPrinter (Serial); 
   
   // Check for reset and do reset routine
   readSettings();  
@@ -738,6 +844,9 @@ void setup() {
   ledOn();
   delay(INIT_DELAY);
   ledOff();
+
+  pinMode(BEEPER, OUTPUT);
+  digitalWrite(BEEPER, LOW);
 
   pinMode(RELAY1, OUTPUT); 
   digitalWrite(RELAY1, LOW);
@@ -806,6 +915,9 @@ void loop()
       checkPumpRunningStatus();      
       relayConditionSafeGuard();
       preventUnauthorizedRun();
+      beepOnFault();
+
+      dispatchPendingNotification();
       
       delay(3);
 
