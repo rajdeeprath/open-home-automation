@@ -566,7 +566,7 @@ void checkPumpRunningStatus(){
 
     String msg;
     
-    if(!isPumpRunningSim())
+    if(!isPumpRunning())
     {
       if(PUMP_CONNECTION_ON){
         PUMP_CONNECTION_ON = false;
