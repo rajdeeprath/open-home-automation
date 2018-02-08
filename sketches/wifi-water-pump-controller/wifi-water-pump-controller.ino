@@ -19,6 +19,10 @@
 
 const String NAME="HMU-PC-001";
 
+float digital_adc_voltage;
+float OP_VOLTAGE = 3.3;
+float MAX_VOLTAGE = 1023.0;
+
 int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
@@ -28,7 +32,7 @@ boolean inited = false;
 boolean timeover;
 int eeAddress = 0;
 int liquidLevelSensorReadIn = 0;
-int liquidLevelSensorReadInThreshold = 950;
+int liquidLevelSensorReadInThreshold = 900;
 String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean PUMP_CONNECTION_ON = false;
@@ -690,8 +694,11 @@ void checkAndRespondToRelayConditionSafeGuard()
  */
 void relayConditionSafeGuard()
 {
-  liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);  
-  if(liquidLevelSensorReadIn >= liquidLevelSensorReadInThreshold) // open magnetic switch
+  liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
+  digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);
+  //debugPrint("liquidLevelSensorReadIn = " + String(liquidLevelSensorReadIn));
+  //debugPrint("digital_adc_voltage = " + String(digital_adc_voltage));
+  if(digital_adc_voltage >= 1.0) // open magnetic switch
   {
     if(LIQUID_LEVEL_OK)
     {
