@@ -22,7 +22,10 @@ const String NAME="HMU-PC-001";
 float digital_adc_voltage;
 float OP_VOLTAGE = 3.3;
 float MAX_VOLTAGE = 1023.0;
-
+long current_time;
+long lastOpenSwitchDetect;
+long timeSinceLastOpenSwitch;
+boolean switchOpen;
 int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
@@ -695,10 +698,34 @@ void checkAndRespondToRelayConditionSafeGuard()
 void relayConditionSafeGuard()
 {
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
-  digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);
-  //debugPrint("liquidLevelSensorReadIn = " + String(liquidLevelSensorReadIn));
-  //debugPrint("digital_adc_voltage = " + String(digital_adc_voltage));
-  if(digital_adc_voltage >= 1.0) // open magnetic switch
+  digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);  
+  current_time = millis();
+  
+  //debugPrint("Analog Voltage = " + String(liquidLevelSensorReadIn) + "  Digital Voltage= " + String(digital_adc_voltage));
+ 
+  if(digital_adc_voltage >= 2.7)
+  {
+    if(!switchOpen)
+    {
+      switchOpen = true;
+      lastOpenSwitchDetect = current_time;
+      debugPrint("switch open");   
+    }
+  }
+  else
+  {
+    if(switchOpen)
+    {
+      switchOpen = false;
+      lastOpenSwitchDetect = current_time + 1000; // forward into future
+      debugPrint("switch closed");
+    }
+  }
+
+  timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect;
+  //debugPrint("timeSinceLastOpenSwitch " + String(timeSinceLastOpenSwitch));
+  
+  if(switchOpen && timeSinceLastOpenSwitch >= 500) // open magnetic switch for 1 whole second
   {
     if(LIQUID_LEVEL_OK)
     {
