@@ -36,8 +36,8 @@
 #define BEEPER 12
 
 
-// temperature monitor
-#define TEMPERATURE A0
+// secondary temperature monitor
+//#define TEMPERATURE A0
 
 
 // assign a MAC address for the ethernet controller.
@@ -61,6 +61,7 @@ DS3231 clock;
 RTCDateTime dt;
 float temperature;
 
+boolean PUMP_EVENT = false;
 
 
 void setup()
@@ -87,6 +88,27 @@ void setup()
 
   // init pins
   pinMode(BEEPER, OUTPUT);
+
+
+  // pump sensor
+  pinMode(SENSOR_1_POWER, OUTPUT);
+  pinMode(SENSOR_1_LEVEL, OUTPUT);
+  pinMode(SENSOR_1_DATA, INPUT);
+  
+  // top sensor
+  pinMode(SENSOR_2_POWER, OUTPUT);
+  pinMode(SENSOR_2_LEVEL, OUTPUT);
+  pinMode(SENSOR_2_DATA, INPUT);
+  
+  // middle sensor
+  pinMode(SENSOR_3_POWER, OUTPUT);
+  pinMode(SENSOR_3_LEVEL, OUTPUT);
+  pinMode(SENSOR_3_DATA, INPUT);
+  
+  // bottom sensor
+  pinMode(SENSOR_4_POWER, OUTPUT);
+  pinMode(SENSOR_4_LEVEL, OUTPUT);
+  pinMode(SENSOR_4_DATA, INPUT);
 
   // give the ethernet module time to boot up:
   delay(5000);
@@ -121,14 +143,17 @@ void evaluatePumpAlarm()
   if(dt.hour >= 5 && dt.hour <= 12)
   {
     // between 5 am and 12 pm -> morning pump runs 
+    PUMP_EVENT = true; 
   } 
   else if(dt.hour >= 17 && dt.hour <= 19) 
   {
     // between 5 pm and 7 pm -> evening pump run evenbt 
+    PUMP_EVENT = true;
   }
   else
   {
     // no alarms
+    PUMP_EVENT = false;
   }
 }
 
