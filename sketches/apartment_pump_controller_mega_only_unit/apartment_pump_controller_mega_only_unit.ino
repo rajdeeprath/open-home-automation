@@ -2,6 +2,9 @@
 #include <Ethernet.h>
 #include <Wire.h>
 #include <DS3231.h>
+#include <QueueArray.h>
+
+
 
 // pump state sensor
 #define SENSOR_1_POWER 31
@@ -35,9 +38,61 @@
 
 #define BEEPER 12
 
+#define NOTICE_LIMIT 5
 
 // secondary temperature monitor
 //#define TEMPERATURE A0
+
+
+
+
+const String NAME="AMU-PC-001";
+
+DS3231 clock;
+RTCDateTime dt;
+float temperature;
+
+boolean PUMP_EVENT = false;
+boolean POWER_SAVER = false;
+
+long last_notify = 0;
+long lastBeepStateChange;
+boolean systemFault;
+boolean beeping;
+
+boolean debug = true;
+
+const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
+
+String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+
+struct Settings {
+   long lastupdate;
+   int reset = 0;
+   int notify = 1;
+   int endpoint_length;
+   char endpoint[80] = "";
+};
+
+
+struct TankState {
+   int low = 0;
+   int mid = 0;
+   int high = 0;
+   int pump = 0;
+   long lastupdate = 0;
+};
+
+
+struct Notification {
+   int low;
+   int mid;
+   int high;
+   int pump;
+   char message[80] = "";
+   long queue_time;
+   long send_time;
+};
 
 
 // assign a MAC address for the ethernet controller.
@@ -56,12 +111,14 @@ EthernetClient client;
 
 char server[] = "iot.flashvisions.com";
 
+QueueArray <Notification> queue;
+Settings conf = {};
+TankState tankState = {};
 
-DS3231 clock;
-RTCDateTime dt;
-float temperature;
+boolean posting;
 
-boolean PUMP_EVENT = false;
+
+
 
 
 void setup()
@@ -127,17 +184,26 @@ void setup()
 
 void loop()
 {
+  
   dt = clock.getDateTime();
   
   temperature = clock.readTemperature();
 
   evaluatePumpAlarm();
 
-  delay(1000);
+  dispatchPendingNotification();
+
+  delay(500);
 }
 
 
 
+
+
+
+/**
+ * Evaluates the expected pump on/off state alarm
+ **/
 void evaluatePumpAlarm()
 {
   if(dt.hour >= 5 && dt.hour <= 12)
@@ -159,28 +225,136 @@ void evaluatePumpAlarm()
 
 
 
-// this method makes a HTTP connection to the server:
-void httpRequest() 
-{
-  // close any connection before send a new request.
-  // This will free the socket on the WiFi shield
-  client.stop();
 
-  // if there's a successful connection:
-  if (client.connect(server, 80)) 
+/**
+ * Evaluates sensor power state. Method considers 'power saver mode' to intelligently turn sensor on/off to extend life and save more power
+ **/ 
+void evaluateSensorPowerState()
+{
+  if(POWER_SAVER)
   {
-    Serial.println("connecting...");
     
-    // send the HTTP GET request:
-    client.println("GET /robots.txt HTTP/1.1");
-    client.println("Host: www.flashvisions.com");
-    client.println("User-Agent: arduino-ethernet");
-    client.println("Connection: close");
-    client.println();
-  } 
-  else 
-  {
-    Serial.println("connection failed");
   }
+  else
+  {
+    
+  }
+}
+
+
+
+
+/**
+ * Resets the state of the device by resetting configuration data and erasing eeprom
+ */
+void doReset()
+{
+  conf.lastupdate = 0;   
+  conf.endpoint_length = 0;
+  conf.reset = 0;
+  conf.notify = 1;
+  memset(conf.endpoint, 0, sizeof(conf.endpoint));
+    
+  //eraseSettings();   
+  delay(1000);
+}
+
+
+
+
+/**
+ * Add to Notification queue
+ */
+void notifyURL(String message)
+{
+  debugPrint("Preparing notification");
+  
+  Notification notice = {};
+  notice.low = tankState.low;
+  notice.mid = tankState.mid;
+  notice.high = tankState.high;
+  message.toCharArray(notice.message, 80);
+  notice.queue_time = 0;
+  notice.send_time = 0;
+  
+  enqueueNotification(notice);
+}
+
+
+/* Add to Notification queue */
+void enqueueNotification(struct Notification notice)
+{
+   notice.queue_time = millis();
+
+   if(queue.count() < NOTICE_LIMIT){
+    //debugPrint("Pushing notification to queue");
+    queue.enqueue(notice);
+   }
+}
+
+
+
+
+/**
+ * Prints message to serial
+ */
+void debugPrint(String message){
+  if(debug){
+    Serial.println(message);
+  }
+}
+
+
+
+
+/**
+ * Send http(s) Notification to remote url with appropriate parameters and custom message
+ */
+void dispatchPendingNotification()
+{
+  if(millis() - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
+  {    
+    if (!posting && conf.notify == 1 && !queue.isEmpty())
+    {
+      debugPrint("Running Notification service");
+
+      debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      Notification notice = queue.dequeue();
+      notice.send_time = millis();
+  
+      posting = true;
+  
+      String data = "";
+      data+="low="+String(tankState.low);
+      data+="mid="+String(tankState.mid);
+      data+="high="+String(tankState.high);
+      data+="pump="+String(tankState.pump);
+      data+="temperature="+String(temperature);
+      data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
+
+      debugPrint(data);
+      
+      if (client.connect("iot.flashvisions.com",80)) {
+      debugPrint("connected");
+      client.println("POST /index.php HTTP/1.1");
+      client.println("Host: iot.flashvisions.com");
+      client.println("Content-Type: application/x-www-form-urlencoded");
+      client.println("Connection: close");
+      client.print("Content-Length: ");
+      client.println(data.length());
+      client.println();
+      client.print(data);
+      client.println();
+
+      if (client.connected()){
+        debugPrint("disconnecting.");
+        client.stop();
+      }
+      }
+  
+      posting = false;
+      last_notify = millis();
+    }
+  } 
 }
 
