@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <DS3231.h>
 #include <QueueArray.h>
+#include <dht.h>
 
 
 
@@ -41,7 +42,7 @@
 #define NOTICE_LIMIT 5
 
 // secondary temperature monitor
-//#define TEMPERATURE A0
+#define TEMPERATURE_SECONDARY A8
 
 
 
@@ -50,10 +51,11 @@ const String NAME="AMU-PC-001";
 
 DS3231 clock;
 RTCDateTime dt;
-float temperature;
+
 
 boolean PUMP_EVENT = false;
 boolean POWER_SAVER = false;
+boolean MAINTAINENCE_MODE = false;
 
 long last_notify = 0;
 long lastBeepStateChange;
@@ -117,6 +119,9 @@ TankState tankState = {};
 
 boolean posting;
 
+dht DHT;
+float temperature;
+boolean useRTCTemperature = false;
 
 
 
@@ -184,19 +189,35 @@ void setup()
 
 void loop()
 {
-  
   dt = clock.getDateTime();
   
-  temperature = clock.readTemperature();
+  readEnclosureTemperature();
 
   evaluatePumpAlarm();
 
+  evaluateTankState();
+
   dispatchPendingNotification();
 
-  delay(500);
+  delay(1000);
 }
 
 
+
+
+void readEnclosureTemperature()
+{
+  if(useRTCTemperature)
+  {
+    temperature = clock.readTemperature();
+  }
+  else
+  {
+    DHT.read11(TEMPERATURE_SECONDARY);  
+    temperature = DHT.temperature;
+  }
+  
+}
 
 
 
@@ -229,7 +250,7 @@ void evaluatePumpAlarm()
 /**
  * Evaluates sensor power state. Method considers 'power saver mode' to intelligently turn sensor on/off to extend life and save more power
  **/ 
-void evaluateSensorPowerState()
+void evaluateTankState()
 {
   if(POWER_SAVER)
   {
