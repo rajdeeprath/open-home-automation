@@ -8,44 +8,34 @@
 
 
 // pump state sensor
-#define SENSOR_1_POWER 31
-#define SENSOR_1_LEVEL 33
-#define SENSOR_1_DATA 35
+#define SENSOR_1_POWER 29
+#define SENSOR_1_LEVEL 31
+#define SENSOR_1_DATA 33
 
 // top sensor
-#define SENSOR_2_POWER 37
-#define SENSOR_2_LEVEL 39
-#define SENSOR_2_DATA 41
+#define SENSOR_2_POWER 28
+#define SENSOR_2_LEVEL 30
+#define SENSOR_2_DATA 32
 
 // middle sensor
-#define SENSOR_3_POWER 43
-#define SENSOR_3_LEVEL 45
-#define SENSOR_3_DATA 47
+#define SENSOR_3_POWER 35 //vcc - orange | brown
+#define SENSOR_3_LEVEL 37 //level - blue | black
+#define SENSOR_3_DATA 39 //data - bluewhite | yellow
 
 // bottom sensor
-#define SENSOR_4_POWER 49
-#define SENSOR_4_LEVEL 51
-#define SENSOR_4_DATA 53
-
-// cooling fan
-#define COOLING_FAN 22
+#define SENSOR_4_POWER 34 //vcc = brown | brown
+#define SENSOR_4_LEVEL 36 //level - greenwhite/white | black
+#define SENSOR_4_DATA 38 //data - green | yellow
 
 // indicators
-#define LED_LOW 24
-#define LED_MED 26
-#define LED_HIGH 28
-#define LED_PUMP 30
 #define LED_MAINTAINENCE 32
 
-#define BEEPER 12
+#define BEEPER 11
 
 #define NOTICE_LIMIT 5
 
 // secondary temperature monitor
 #define TEMPERATURE_SECONDARY A8
-
-
-
 
 const String NAME="AMU-PC-001";
 
@@ -86,6 +76,15 @@ struct TankState {
 };
 
 
+struct SensorState {
+   int low = 0;
+   int mid = 0;
+   int high = 0;
+   int pump = 0;
+   long lastupdate = 0;
+};
+
+
 struct Notification {
    int low;
    int mid;
@@ -116,14 +115,16 @@ char server[] = "iot.flashvisions.com";
 QueueArray <Notification> queue;
 Settings conf = {};
 TankState tankState = {};
+SensorState sensors = {};
 
 boolean posting;
 
 dht DHT;
 float temperature;
 boolean useRTCTemperature = false;
+boolean inited = false;
 
-
+int low, mid, high, pump;
 
 
 void setup()
@@ -153,27 +154,40 @@ void setup()
 
 
   // pump sensor
-  pinMode(SENSOR_1_POWER, OUTPUT);
-  pinMode(SENSOR_1_LEVEL, OUTPUT);
-  pinMode(SENSOR_1_DATA, INPUT);
-  
-  // top sensor
-  pinMode(SENSOR_2_POWER, OUTPUT);
-  pinMode(SENSOR_2_LEVEL, OUTPUT);
-  pinMode(SENSOR_2_DATA, INPUT);
-  
-  // middle sensor
-  pinMode(SENSOR_3_POWER, OUTPUT);
-  pinMode(SENSOR_3_LEVEL, OUTPUT);
-  pinMode(SENSOR_3_DATA, INPUT);
-  
-  // bottom sensor
-  pinMode(SENSOR_4_POWER, OUTPUT);
-  pinMode(SENSOR_4_LEVEL, OUTPUT);
-  pinMode(SENSOR_4_DATA, INPUT);
+  pinMode(SENSOR_1_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_1_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_1_DATA, INPUT);//data
 
-  // give the ethernet module time to boot up:
-  delay(5000);
+  pumpSensorOn();
+
+
+  // top sensor
+  pinMode(SENSOR_2_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_2_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_2_DATA, INPUT);//data
+
+  topSensorOn();
+
+
+  // middle sensor
+  pinMode(SENSOR_3_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_3_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_3_DATA, INPUT);//data
+  
+  middleSensorOn();
+
+
+  // bottom sensor
+  pinMode(SENSOR_4_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_4_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_4_DATA, INPUT);//data
+
+  bottomSensorOn();
+  
+
+  // give the hardware some time to initialize
+  delay(10000);  
+  
   
   // start the Ethernet connection using a fixed IP address and DNS server:
   Ethernet.begin(mac, ip);
@@ -183,12 +197,159 @@ void setup()
   Serial.println(Ethernet.localIP());
 
   // wait for ethernet link (1 mins)
-  //delay(10000);
+  //delay(60000);
+}
+
+
+
+
+void bottomSensorOn()
+{
+  // bottom sensor activate if is deactive
+  if(sensors.low == 0)
+  {
+    digitalWrite(SENSOR_4_POWER, HIGH); //vcc
+    digitalWrite(SENSOR_4_LEVEL, HIGH); // level
+
+    sensors.low = 1;
+  }
+}
+
+
+void bottomSensorOff()
+{
+  // bottom sensor deactivate if is active
+  if(sensors.low == 1)
+  {
+    digitalWrite(SENSOR_4_POWER, LOW); //vcc
+    digitalWrite(SENSOR_4_LEVEL, LOW); // level  
+
+    sensors.low = 0;
+  }
+}
+
+
+void middleSensorOn()
+{
+  // middle sensor activate if is deactive
+  if(sensors.mid == 0)
+  {
+    digitalWrite(SENSOR_3_POWER, HIGH); // vcc
+    digitalWrite(SENSOR_3_LEVEL, HIGH); // level
+
+    sensors.mid = 1;
+  }
+}
+
+
+void middleSensorOff()
+{
+  // middle sensor deactivate if is active
+  if(sensors.mid == 1)
+  {
+    digitalWrite(SENSOR_3_POWER, LOW); // vcc
+    digitalWrite(SENSOR_3_LEVEL, LOW); // level
+
+    sensors.mid = 0;
+  }
+}
+
+
+void topSensorOn()
+{
+  // top sensor activate if is deactive
+  if(sensors.high == 0)
+  {
+    digitalWrite(SENSOR_2_POWER, HIGH); //vcc
+    digitalWrite(SENSOR_2_LEVEL, HIGH); //level
+
+    sensors.high = 1;
+  }
+}
+
+
+void topSensorOff()
+{
+  // top sensor deactivate if is active
+  if(sensors.high == 1)
+  {
+    digitalWrite(SENSOR_2_POWER, LOW); //vcc
+    digitalWrite(SENSOR_2_LEVEL, LOW); //level
+
+    sensors.high = 0;
+  }
+}
+
+
+void pumpSensorOn()
+{
+  // pump sensor activate if is deactive
+  if(sensors.pump == 0)
+  {
+    digitalWrite(SENSOR_1_POWER, HIGH);  
+    digitalWrite(SENSOR_1_LEVEL, HIGH);
+
+    sensors.pump = 1;
+  }
+}
+
+
+void pumpSensorOff()
+{
+  // pump sensor deactivate if is active
+  if(sensors.pump == 1)
+  {
+    digitalWrite(SENSOR_1_POWER, LOW);  
+    digitalWrite(SENSOR_1_LEVEL, LOW);
+
+    sensors.pump = 0;
+  }
+}
+
+
+
+void initialize()
+{
+  // initially we read in all sensors
+
+  /*
+  // bottom sensor activate
+  bottomSensorOn();
+
+  // middle sensor activate
+  middleSensorOn();
+
+  // top sensor activate
+  topSensorOn();
+
+  // pump sensor activate
+  pumpSensorOn();
+  */
+  
+
+  // read bottom sensot
+  tankState.low = digitalRead(SENSOR_4_DATA);
+
+  // read middle sensot
+  tankState.mid = digitalRead(SENSOR_3_DATA);
+
+  // read top sensot
+  tankState.high = digitalRead(SENSOR_2_DATA);
+
+  // read pump sensor
+  tankState.pump = digitalRead(SENSOR_1_DATA);
+  
+  debugPrint("initialized");
+  inited = true;
 }
 
 
 void loop()
 {
+  if(!inited){
+    initialize();
+  }
+  
   dt = clock.getDateTime();
   
   readEnclosureTemperature();
@@ -254,12 +415,228 @@ void evaluateTankState()
 {
   if(POWER_SAVER)
   {
-    
+    if(!PUMP_EVENT)
+    {
+      // if pump sensor is on turn off pump sensor
+      if(sensors.pump == 1)
+      {
+        pumpSensorOff();
+      }
+    }
+    else
+    {
+      // if pump sensor is off turn on pump sensor
+      if(sensors.pump == 0)
+      {
+        pumpSensorOn();
+      }
+    }
+
+    // if pump sensor is on turn on all sensors
+    if(sensors.pump == 1)
+    {
+      // switch on low
+      if(sensors.low == 0)
+      {
+        bottomSensorOn();
+      }
+      
+      // switch on mid
+      if(sensors.mid == 0)
+      {
+        middleSensorOn();
+      }
+
+      // switch on high
+      if(sensors.high == 0)
+      {
+        topSensorOn();
+      }
+    }
+    else
+    {
+      if(tankState.high == 1)
+      {
+        high = 1;
+        
+        // switch off low
+        if(sensors.low == 1)
+        {
+          bottomSensorOff();
+        }
+  
+        // assume water
+        low = 1;
+  
+        // switch on mid
+        if(sensors.mid == 0)
+        {
+          middleSensorOn();
+        }
+  
+        // read mid
+        mid = digitalRead(SENSOR_3_DATA);
+      }
+      else if(tankState.mid == 1)
+      {
+         mid = 1;
+        
+        // switch off top
+        if(sensors.high == 1)
+        {
+          topSensorOff();
+        }
+  
+        // no water
+        high = 0;
+  
+        // switch on low
+        if(sensors.low == 0)
+        {
+          bottomSensorOn();
+        }
+  
+        // read low
+        low = digitalRead(SENSOR_4_DATA);
+      }
+      else if(tankState.low == 1)
+      {
+        low = 1;
+        
+        // switch off mid
+        if(sensors.mid == 1)
+        {
+          middleSensorOff();
+        }
+  
+        // no water
+        mid = 0;
+  
+        // switch off top
+        if(sensors.high == 1)
+        {
+          topSensorOff();
+        }
+  
+        // no water
+        high = 0;
+      }
+    }
   }
   else
   {
+    // make sure all sensors are on
     
+    // switch on low
+    if(sensors.low == 0)
+    {
+      bottomSensorOn();
+    }
+    
+    // switch on mid
+    if(sensors.mid == 0)
+    {
+      middleSensorOn();
+    }
+
+    // switch on high
+    if(sensors.high == 0)
+    {
+      topSensorOn();
+    }
+
+    // switch on PUMP
+    if(sensors.pump == 0)
+    {
+      pumpSensorOn();
+    }
+    
+
+    // read sensor data
+    low = digitalRead(SENSOR_4_DATA);
+    mid = digitalRead(SENSOR_3_DATA);
+    high = digitalRead(SENSOR_2_DATA);
+    pump = digitalRead(SENSOR_1_DATA);
   }
+
+
+  // update low level state
+  if(tankState.low == 0)
+  {
+    if(low == 1)
+    {
+      tankState.low = low;
+    }
+  }
+  else if(tankState.low == 1)
+  {
+    if(low == 0)
+    {
+      tankState.low = low;
+    }
+  }
+
+
+
+  // update mid level state
+  if(tankState.mid == 0)
+  {
+    if(mid == 1)
+    {
+      tankState.mid = mid;
+    }
+  }
+  else if(tankState.mid == 1)
+  {
+    if(mid == 0)
+    {
+      tankState.mid = mid;
+    }
+  }
+
+
+
+  // update high level state
+  if(tankState.high == 0)
+  {
+    if(high == 1)
+    {
+      tankState.high = high;
+    }
+  }
+  else if(tankState.high == 1)
+  {
+    if(high == 0)
+    {
+      tankState.high = high;
+    }
+  }
+
+
+
+
+  // update high level state
+  if(tankState.pump == 0)
+  {
+    if(pump == 1)
+    {
+      tankState.pump = pump;
+    }
+  }
+  else if(tankState.pump == 1)
+  {
+    if(pump == 0)
+    {
+      tankState.pump = pump;
+    }
+  }
+
+
+  /***************************/
+  debugPrint("low = " + String(tankState.low));
+  debugPrint("mid = " + String(tankState.mid));
+  debugPrint("high = " + String(tankState.high));
+  debugPrint("pump = " + String(tankState.pump));
 }
 
 
