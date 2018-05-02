@@ -6,11 +6,11 @@
 #include <dht.h>
 
 
-
 // pump state sensor
 #define SENSOR_1_POWER 29
 #define SENSOR_1_LEVEL 31
 #define SENSOR_1_DATA 33
+//#define SENSOR_1_DATA A10
 
 // top sensor
 #define SENSOR_2_POWER 28
@@ -55,6 +55,7 @@ boolean beeping;
 boolean debug = true;
 
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
+const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 
 String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -90,6 +91,7 @@ struct Notification {
    int mid;
    int high;
    int pump;
+   float temperature;
    char message[80] = "";
    long queue_time;
    long send_time;
@@ -118,13 +120,17 @@ TankState tankState = {};
 SensorState sensors = {};
 
 boolean posting;
+boolean stateChanged = false;
 
 dht DHT;
 float temperature;
 boolean useRTCTemperature = false;
 boolean inited = false;
+long initialReadTime =0;
+long minInitialSensorReadTime = 10000;
 
 int low, mid, high, pump;
+long lastLowChange, lastMidChange, lastHighChange, lastPumpChange;
 
 
 void setup()
@@ -147,46 +153,8 @@ void setup()
   clock.setDateTime(__DATE__, __TIME__);
 
 
-  /* Pins init */
-
-  // init pins
-  pinMode(BEEPER, OUTPUT);
-
-
-  // pump sensor
-  pinMode(SENSOR_1_POWER, OUTPUT); //vcc
-  pinMode(SENSOR_1_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_1_DATA, INPUT);//data
-
-  pumpSensorOn();
-
-
-  // top sensor
-  pinMode(SENSOR_2_POWER, OUTPUT); //vcc
-  pinMode(SENSOR_2_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_2_DATA, INPUT);//data
-
-  topSensorOn();
-
-
-  // middle sensor
-  pinMode(SENSOR_3_POWER, OUTPUT); //vcc
-  pinMode(SENSOR_3_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_3_DATA, INPUT);//data
-  
-  middleSensorOn();
-
-
-  // bottom sensor
-  pinMode(SENSOR_4_POWER, OUTPUT); //vcc
-  pinMode(SENSOR_4_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_4_DATA, INPUT);//data
-
-  bottomSensorOn();
-  
-
   // give the hardware some time to initialize
-  delay(10000);  
+  delay(20000);  
   
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -196,8 +164,47 @@ void setup()
   Serial.print("My IP address: ");
   Serial.println(Ethernet.localIP());
 
-  // wait for ethernet link (1 mins)
-  //delay(60000);
+
+  /* Pins init */
+
+  // init pins
+  pinMode(BEEPER, OUTPUT);
+
+
+  // pump sensor
+  pinMode(SENSOR_1_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_1_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_1_DATA, INPUT_PULLUP);//data
+
+  pumpSensorOn();
+
+
+  // top sensor
+  pinMode(SENSOR_2_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_2_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_2_DATA, INPUT_PULLUP);//data
+
+  topSensorOn();
+
+
+  // middle sensor
+  pinMode(SENSOR_3_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_3_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_3_DATA, INPUT_PULLUP);//data
+  
+  middleSensorOn();
+
+
+  // bottom sensor
+  pinMode(SENSOR_4_POWER, OUTPUT); //vcc
+  pinMode(SENSOR_4_LEVEL, OUTPUT);//level
+  pinMode(SENSOR_4_DATA, INPUT_PULLUP);//data
+
+  bottomSensorOn();
+
+
+  /* Misc init */  
+  initialReadTime = millis();
 }
 
 
@@ -308,26 +315,11 @@ void pumpSensorOff()
 
 
 
-void initialize()
+void readSensors()
 {
-  // initially we read in all sensors
+  // initially we read in all sensors  
 
-  /*
-  // bottom sensor activate
-  bottomSensorOn();
-
-  // middle sensor activate
-  middleSensorOn();
-
-  // top sensor activate
-  topSensorOn();
-
-  // pump sensor activate
-  pumpSensorOn();
-  */
-  
-
-  // read bottom sensot
+  // read bottom sensor
   tankState.low = digitalRead(SENSOR_4_DATA);
 
   // read middle sensot
@@ -338,20 +330,27 @@ void initialize()
 
   // read pump sensor
   tankState.pump = digitalRead(SENSOR_1_DATA);
-  
-  debugPrint("initialized");
-  inited = true;
+
+  debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
+
+  // initial read time
+  if(millis() - initialReadTime > minInitialSensorReadTime){
+    if(!inited){
+      inited = true;
+      debugPrint("inited");
+      notifyURL("System Started!");
+    }
+  }
 }
+
 
 
 void loop()
 {
-  if(!inited){
-    initialize();
-  }
-  
   dt = clock.getDateTime();
-  
+
+  readSensors();  
+
   readEnclosureTemperature();
 
   evaluatePumpAlarm();
@@ -359,7 +358,7 @@ void loop()
   evaluateTankState();
 
   dispatchPendingNotification();
-
+  
   delay(1000);
 }
 
@@ -413,28 +412,128 @@ void evaluatePumpAlarm()
  **/ 
 void evaluateTankState()
 {
-  if(POWER_SAVER)
-  {
-    if(!PUMP_EVENT)
+    if(!inited){
+      return;
+    }
+
+
+    stateChanged = false;
+    
+  
+    if(POWER_SAVER)
     {
-      // if pump sensor is on turn off pump sensor
+      if(!PUMP_EVENT)
+      {
+        // if pump sensor is on turn off pump sensor
+        if(sensors.pump == 1)
+        {
+          pumpSensorOff();
+        }
+      }
+      else
+      {
+        // if pump sensor is off turn on pump sensor
+        if(sensors.pump == 0)
+        {
+          pumpSensorOn();
+        }
+      }
+  
+      // if pump sensor is on turn on all sensors
       if(sensors.pump == 1)
       {
-        pumpSensorOff();
+        // switch on low
+        if(sensors.low == 0)
+        {
+          bottomSensorOn();
+        }
+        
+        // switch on mid
+        if(sensors.mid == 0)
+        {
+          middleSensorOn();
+        }
+  
+        // switch on high
+        if(sensors.high == 0)
+        {
+          topSensorOn();
+        }
+      }
+      else
+      {
+        if(tankState.high == 1)
+        {
+          high = 1;
+          
+          // switch off low
+          if(sensors.low == 1)
+          {
+            bottomSensorOff();
+          }
+    
+          // assume water
+          low = 1;
+    
+          // switch on mid
+          if(sensors.mid == 0)
+          {
+            middleSensorOn();
+          }
+    
+          // read mid
+          mid = digitalRead(SENSOR_3_DATA);
+        }
+        else if(tankState.mid == 1)
+        {
+           mid = 1;
+          
+          // switch off top
+          if(sensors.high == 1)
+          {
+            topSensorOff();
+          }
+    
+          // no water
+          high = 0;
+    
+          // switch on low
+          if(sensors.low == 0)
+          {
+            bottomSensorOn();
+          }
+    
+          // read low
+          low = digitalRead(SENSOR_4_DATA);
+        }
+        else if(tankState.low == 1)
+        {
+          low = 1;
+          
+          // switch off mid
+          if(sensors.mid == 1)
+          {
+            middleSensorOff();
+          }
+    
+          // no water
+          mid = 0;
+    
+          // switch off top
+          if(sensors.high == 1)
+          {
+            topSensorOff();
+          }
+    
+          // no water
+          high = 0;
+        }
       }
     }
     else
     {
-      // if pump sensor is off turn on pump sensor
-      if(sensors.pump == 0)
-      {
-        pumpSensorOn();
-      }
-    }
-
-    // if pump sensor is on turn on all sensors
-    if(sensors.pump == 1)
-    {
+      // make sure all sensors are on
+      
       // switch on low
       if(sensors.low == 0)
       {
@@ -446,199 +545,174 @@ void evaluateTankState()
       {
         middleSensorOn();
       }
-
+  
       // switch on high
       if(sensors.high == 0)
       {
         topSensorOn();
       }
+  
+      // switch on PUMP
+      if(sensors.pump == 0)
+      {
+        pumpSensorOn();
+      }
+      
+  
+      // read sensor data
+      low = digitalRead(SENSOR_4_DATA);
+      mid = digitalRead(SENSOR_3_DATA);
+      high = digitalRead(SENSOR_2_DATA);
+      pump = digitalRead(SENSOR_1_DATA);
     }
-    else
+  
+  
+    // detect change
+    trackSensorChanges(low, mid, high, pump);
+  
+  
+    // update low level state
+    if(hasLowChanged())
     {
+      stateChanged = true;
+      tankState.low = low;
+    }
+  
+  
+    // update mid level state
+    if(hasMidChanged())
+    {
+      stateChanged = true;
+      tankState.mid = mid;
+    }
+  
+  
+  
+    // update high level state
+    if(hasHighChanged())
+    {
+      stateChanged = true;
+      tankState.high = high;
+    }
+  
+  
+  
+    // update pump level state
+    if(hasPumpChanged())
+    {
+      stateChanged = true;
+      tankState.pump = pump;
+    }
+  
+  
+    /***************************/
+    debugPrint("low = " + String(tankState.low));
+    debugPrint("mid = " + String(tankState.mid));
+    debugPrint("high = " + String(tankState.high));
+    debugPrint("pump = " + String(tankState.pump));
+    debugPrint("state changed = " + String(stateChanged));
+
+
+    // evaluate and dispatch message
+    if(stateChanged)
+    {
+      String message = "";
+
+      // evaluate
       if(tankState.high == 1)
       {
-        high = 1;
-        
-        // switch off low
-        if(sensors.low == 1)
-        {
-          bottomSensorOff();
-        }
-  
-        // assume water
-        low = 1;
-  
-        // switch on mid
-        if(sensors.mid == 0)
-        {
-          middleSensorOn();
-        }
-  
-        // read mid
-        mid = digitalRead(SENSOR_3_DATA);
+        message = "Water Level @ 100%";
       }
       else if(tankState.mid == 1)
       {
-         mid = 1;
-        
-        // switch off top
-        if(sensors.high == 1)
-        {
-          topSensorOff();
-        }
-  
-        // no water
-        high = 0;
-  
-        // switch on low
-        if(sensors.low == 0)
-        {
-          bottomSensorOn();
-        }
-  
-        // read low
-        low = digitalRead(SENSOR_4_DATA);
+        message = "Water Level @ 50%";
       }
       else if(tankState.low == 1)
       {
-        low = 1;
-        
-        // switch off mid
-        if(sensors.mid == 1)
-        {
-          middleSensorOff();
-        }
-  
-        // no water
-        mid = 0;
-  
-        // switch off top
-        if(sensors.high == 1)
-        {
-          topSensorOff();
-        }
-  
-        // no water
-        high = 0;
+        message = "Water Level @ 10%";
+      }
+
+      // dispatch
+      if(message != ""){
+        notifyURL(message);
       }
     }
+}
+
+
+
+boolean hasLowChanged()
+{
+  long currentTimeStamp = millis();
+  return ((currentTimeStamp - lastLowChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastLowChange > 0);
+}
+
+
+boolean hasMidChanged()
+{
+  long currentTimeStamp = millis();
+  return ((currentTimeStamp - lastMidChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastMidChange > 0);
+}
+
+
+
+boolean hasHighChanged()
+{
+  long currentTimeStamp = millis();
+  return ((currentTimeStamp - lastHighChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastHighChange > 0);
+}
+
+
+boolean hasPumpChanged()
+{
+  long currentTimeStamp = millis();
+  return ((currentTimeStamp - lastPumpChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
+}
+
+
+void trackSensorChanges(int &low, int &mid, int &high, int &pump)
+{
+  long currentTimeStamp = millis();
+  
+  if(low != tankState.low)
+  {
+    lastLowChange = currentTimeStamp;
   }
   else
   {
-    // make sure all sensors are on
-    
-    // switch on low
-    if(sensors.low == 0)
-    {
-      bottomSensorOn();
-    }
-    
-    // switch on mid
-    if(sensors.mid == 0)
-    {
-      middleSensorOn();
-    }
-
-    // switch on high
-    if(sensors.high == 0)
-    {
-      topSensorOn();
-    }
-
-    // switch on PUMP
-    if(sensors.pump == 0)
-    {
-      pumpSensorOn();
-    }
-    
-
-    // read sensor data
-    low = digitalRead(SENSOR_4_DATA);
-    mid = digitalRead(SENSOR_3_DATA);
-    high = digitalRead(SENSOR_2_DATA);
-    pump = digitalRead(SENSOR_1_DATA);
+    lastLowChange = 0;
   }
 
 
-  // update low level state
-  if(tankState.low == 0)
+  if(mid != tankState.mid)
   {
-    if(low == 1)
-    {
-      tankState.low = low;
-    }
+    lastMidChange = currentTimeStamp;
   }
-  else if(tankState.low == 1)
+  else
   {
-    if(low == 0)
-    {
-      tankState.low = low;
-    }
+    lastMidChange = 0;
   }
 
 
-
-  // update mid level state
-  if(tankState.mid == 0)
+  if(high != tankState.high)
   {
-    if(mid == 1)
-    {
-      tankState.mid = mid;
-    }
+    lastHighChange = currentTimeStamp;
   }
-  else if(tankState.mid == 1)
+  else
   {
-    if(mid == 0)
-    {
-      tankState.mid = mid;
-    }
+    lastHighChange = 0;
   }
 
 
-
-  // update high level state
-  if(tankState.high == 0)
+  if(pump != tankState.pump)
   {
-    if(high == 1)
-    {
-      tankState.high = high;
-    }
+    lastPumpChange = currentTimeStamp;
   }
-  else if(tankState.high == 1)
+  else
   {
-    if(high == 0)
-    {
-      tankState.high = high;
-    }
+    lastPumpChange = 0;
   }
-
-
-
-
-  // update high level state
-  if(tankState.pump == 0)
-  {
-    if(pump == 1)
-    {
-      tankState.pump = pump;
-    }
-  }
-  else if(tankState.pump == 1)
-  {
-    if(pump == 0)
-    {
-      tankState.pump = pump;
-    }
-  }
-
-
-  /***************************/
-  debugPrint("low = " + String(tankState.low));
-  debugPrint("mid = " + String(tankState.mid));
-  debugPrint("high = " + String(tankState.high));
-  debugPrint("pump = " + String(tankState.pump));
 }
-
 
 
 
@@ -671,6 +745,8 @@ void notifyURL(String message)
   notice.low = tankState.low;
   notice.mid = tankState.mid;
   notice.high = tankState.high;
+  notice.pump = tankState.pump;
+  notice.temperature = temperature;
   message.toCharArray(notice.message, 80);
   notice.queue_time = 0;
   notice.send_time = 0;
@@ -723,31 +799,47 @@ void dispatchPendingNotification()
       posting = true;
   
       String data = "";
-      data+="low="+String(tankState.low);
-      data+="mid="+String(tankState.mid);
-      data+="high="+String(tankState.high);
-      data+="pump="+String(tankState.pump);
-      data+="temperature="+String(temperature);
+      data+="amu_pc_001=1";
+      data+="&";
+      data+="message="+String(notice.message);
+      data+="&";
+      data+="health="+String(1);
+      data+="&";
+      data+="temperature="+String(notice.temperature);
+      data+="&";
+      data+="low="+String(notice.low);
+      data+="&";
+      data+="mid="+String(notice.mid);
+      data+="&";
+      data+="high="+String(notice.high);
+      data+="&";
+      data+="pump="+String(notice.pump);
+      data+="&";
+      data+="queue_time="+String(notice.queue_time);
+      data+="&";
+      data+="send_time="+String(notice.send_time);
+      data+="&";
       data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
 
       debugPrint(data);
       
-      if (client.connect("iot.flashvisions.com",80)) {
-      debugPrint("connected");
-      client.println("POST /index.php HTTP/1.1");
-      client.println("Host: iot.flashvisions.com");
-      client.println("Content-Type: application/x-www-form-urlencoded");
-      client.println("Connection: close");
-      client.print("Content-Length: ");
-      client.println(data.length());
-      client.println();
-      client.print(data);
-      client.println();
-
-      if (client.connected()){
-        debugPrint("disconnecting.");
-        client.stop();
-      }
+      if (client.connect("iot.flashvisions.com",80)) 
+      {
+        debugPrint("connected");
+        client.println("POST /index.php HTTP/1.1");
+        client.println("Host: iot.flashvisions.com");
+        client.println("Content-Type: application/x-www-form-urlencoded;");
+        client.println("Connection: close");
+        client.print("Content-Length: ");
+        client.println(data.length());
+        client.println();
+        client.print(data);
+        client.println();
+  
+        if (client.connected()){
+          debugPrint("disconnecting.");
+          client.stop();
+        }
       }
   
       posting = false;
