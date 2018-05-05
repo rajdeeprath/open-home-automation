@@ -61,9 +61,13 @@ boolean systemFault;
 boolean beeping;
 
 boolean debug = true;
+int echo = 1;
 
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
-const long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
+const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
+const long OVERFLOW_STATE_THRESHOLD = 60000;
+const long SENSOR_TEST_THRESHOLD = 120000;
 
 String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -112,6 +116,7 @@ struct Notification {
    int pump;
    float temperature;
    int health;
+   int echo;
    char message[80] = "";
    long queue_time;
    long send_time;
@@ -155,11 +160,13 @@ long sensorTestTime = 0;
 boolean sensorsInvert = false;
 
 int low, mid, high, pump;
-long lastLowChange, lastMidChange, lastHighChange, lastPumpChange;
+long lastLowChange, lastMidChange, lastHighChange, lastPumpChange, lastOverflowCondition;
 int normalLow, normalMid, normalHigh, normalPump;
 int invertLow, invertMid, invertHigh, invertPump;
 
 int health = 1;
+boolean SENSOR_TEST_EVENT = false;
+long lastSensorTest = 0;
 
 void setup()
 {
@@ -182,7 +189,8 @@ void setup()
 
 
   // give the hardware some time to initialize
-  delay(10000);  
+  delay(20000);  
+  debugPrint("Preparing to start");
   
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -515,12 +523,13 @@ void initSensors()
   debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
   
   // initial read time
+
   if(millis() - initialReadTime > minInitialSensorReadTime)
   {
       inited = true;
       debugPrint("inited");
       systemLedOff();
-      notifyURL("System Started!");
+      notifyURL("System Started! Water Level ~ 50%");
 
       doSensorTest();
   }
@@ -602,7 +611,7 @@ void testSensors()
     debugPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
 
     // change condition after 10seconds
-    if(millis() - sensorTestTime > 10000){
+    if(millis() - sensorTestTime > 5000){
       invertSensorLevels();      
     }
   }
@@ -625,24 +634,42 @@ void testSensors()
     debugPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
 
     // change condition after 10 seconds
-    if(millis() - sensorTestTime > 10000)
+    if(millis() - sensorTestTime > 5000)
     {
       // cancel test
       cancelSensorTest();  
+
+      // record last test time
+      lastSensorTest = millis();
 
       // evaluate result
       if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
       {
         health = 1;
-        notifyURL("Sensors functioning normally!");
+        //notifyURL("Sensors functioning normally!");
       }
       else
       {
         health = 0;
+        systemLedOn();
         notifyURL("Sensors problem detected!");
       }
     }
   }
+}
+
+
+
+void doMiscTasks()
+{
+  long currentTimeStamp = millis();
+  if(SENSOR_TEST_EVENT)
+  {
+    if((currentTimeStamp > 0) && (currentTimeStamp - lastSensorTest > SENSOR_TEST_THRESHOLD))
+    {
+      doSensorTest();
+    } 
+  }  
 }
 
 
@@ -665,6 +692,7 @@ void loop()
   {
     evaluateAlarms();
     evaluateTankState();
+    doMiscTasks();
   }
 
   dispatchPendingNotification();
@@ -712,6 +740,17 @@ void evaluateAlarms()
     // no alarms
     PUMP_EVENT = false;
   }
+
+
+  // Sensor test at 1 am
+  if(dt.hour == 1 && dt.minute == 0)
+  {
+    SENSOR_TEST_EVENT = true;
+  }
+  else
+  {
+    SENSOR_TEST_EVENT = false;
+  }
 }
 
 
@@ -719,15 +758,16 @@ void evaluateAlarms()
 int readSensor(int pin)
 {
   // mock delayed change here
+  //long timeSince = millis() - initialReadTime;
+
   /*
-  long timeSince = millis() - initialReadTime;
-  if(timeSince >= 30000)
+  if(timeSince >= 60000)
   { 
-    if(pin == SENSOR_2_DATA){
-      return 1;
+    if(pin == SENSOR_1_DATA){
+      return 0;
     }
-  }
-  else if(timeSince >= 20000)
+  }  
+  else if(timeSince >= 30000)
   { 
     if(pin == SENSOR_2_DATA){
       return 0;
@@ -906,7 +946,7 @@ void evaluateTankState()
     
   
     // detect change
-    trackSensorChanges(low, mid, high, pump);
+    trackSensorChanges(low, mid, high, pump);   
   
   
     // update low level state
@@ -943,9 +983,13 @@ void evaluateTankState()
     }
 
 
+    // monitor overflow
+    trackOverFlow(tankState.pump, tankState.high);
+
+
     // Indicate change
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
-  
+
   
     /***************************/    
     debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
@@ -961,21 +1005,22 @@ void evaluateTankState()
       // evaluate
       if(tankState.high == 1)
       {
-        message = "Water Level @ 100%";
+        message = "Water Level ~ 100%";
       }
       else if(tankState.mid == 1)
       {
-        message = "Water Level @ 50%";
+        message = "Water Level ~ 50%";
       }
       else if(tankState.low == 1)
       {
-        message = "Water Level @ 10%";
+        message = "Water Level ~ 10%";
       }
 
       // dispatch
       if(message != ""){
         notifyURL(message);
       }
+      
     }
 }
 
@@ -995,6 +1040,13 @@ boolean hasMidChanged()
 }
 
 
+boolean willOverflow()
+{
+  long currentTimeStamp = millis();
+  return ((currentTimeStamp - lastOverflowCondition) > OVERFLOW_STATE_THRESHOLD && lastOverflowCondition > 0);
+}
+
+
 
 boolean hasHighChanged()
 {
@@ -1006,7 +1058,7 @@ boolean hasHighChanged()
 boolean hasPumpChanged()
 {
   long currentTimeStamp = millis();
-  return ((currentTimeStamp - lastPumpChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
+  return ((currentTimeStamp - lastPumpChange) > PUMP_SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
 }
 
 
@@ -1054,7 +1106,20 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
   {
     pumpLedOff();
   }
+
+
+   if(willOverflow())
+   {
+      // start alarm
+      alarmOn();
+   }
+   else
+   {
+      // stop alarm
+      alarmOff();
+   }
 }
+
 
 
 void trackSensorChanges(int &low, int &mid, int &high, int &pump)
@@ -1115,6 +1180,28 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 
 
 
+void trackOverFlow(int pump, int high)
+{
+  long currentTimeStamp = millis();
+  
+  // track overflow
+  if(pump == 1 && high == 1)
+  {
+    debugPrint("Overflow condition");    
+    
+    if(lastOverflowCondition == 0)
+    {
+      lastOverflowCondition = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastOverflowCondition = 0;
+  }
+}
+
+
+
 /**
  * Resets the state of the device by resetting configuration data and erasing eeprom
  */
@@ -1150,6 +1237,7 @@ void notifyURL(String message)
   notice.queue_time = 0;
   notice.send_time = 0;
   notice.health = health;
+  notice.echo = echo;
   
   
   enqueueNotification(notice);
@@ -1187,7 +1275,8 @@ void debugPrint(String message){
  */
 void dispatchPendingNotification()
 {
-  if(millis() - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
+  long currentTimeStamp = millis();
+  if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
@@ -1206,6 +1295,8 @@ void dispatchPendingNotification()
       data+="&";
       data+="health="+String(notice.health);
       data+="&";
+      data+="echo="+String(notice.echo);
+      data+="&";      
       data+="temperature="+String(notice.temperature);
       data+="&";
       data+="low="+String(notice.low);
@@ -1244,7 +1335,7 @@ void dispatchPendingNotification()
       }
   
       posting = false;
-      last_notify = millis();
+      last_notify = currentTimeStamp;
     }
   } 
 }
