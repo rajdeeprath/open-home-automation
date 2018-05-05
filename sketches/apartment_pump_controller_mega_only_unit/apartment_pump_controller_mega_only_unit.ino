@@ -253,6 +253,8 @@ void setup()
 
   /* Misc init */  
   initialReadTime = millis();
+
+  
 }
 
 
@@ -519,6 +521,8 @@ void initSensors()
       debugPrint("inited");
       systemLedOff();
       notifyURL("System Started!");
+
+      doSensorTest();
   }
 }
 
@@ -532,6 +536,29 @@ void doSensorTest()
   sensorCheck = true;
   sensorTestTime = millis();
   sensorsInvert = false;
+
+  debugPrint("Starting sensor test");
+
+  digitalWrite(SENSOR_1_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_2_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_3_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_4_LEVEL, HIGH); // level
+}
+
+
+
+
+void invertSensorLevels()
+{
+  sensorTestTime = millis();
+  sensorsInvert = true;
+
+  debugPrint("Sensor levels inverted");
+      
+  digitalWrite(SENSOR_1_LEVEL, LOW); // level
+  digitalWrite(SENSOR_2_LEVEL, LOW); // level
+  digitalWrite(SENSOR_3_LEVEL, LOW); // level
+  digitalWrite(SENSOR_4_LEVEL, LOW); // level
 }
 
 
@@ -543,15 +570,23 @@ void cancelSensorTest()
   sensorCheck = false;
   sensorTestTime = millis();
   sensorsInvert = false;
+
+  debugPrint("Stopping sensor test");
+  
+  digitalWrite(SENSOR_1_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_2_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_3_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_4_LEVEL, HIGH); // level
 }
 
 
 
 void testSensors()
 {
-
   if(!sensorsInvert)
   {
+    debugPrint("Checking normal sensor states");
+    
     // read bottom sensor
     normalLow = readSensor(SENSOR_4_DATA);
   
@@ -564,14 +599,17 @@ void testSensors()
     // read pump sensor
     normalPump = readSensor(SENSOR_1_DATA);
 
+    debugPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
+
     // change condition after 10seconds
     if(millis() - sensorTestTime > 10000){
-      sensorTestTime = millis();
-      sensorsInvert = true;
+      invertSensorLevels();      
     }
   }
   else 
   {
+    debugPrint("Checking invert sensor states");
+    
     // read bottom sensor
     invertLow = readSensor(SENSOR_4_DATA);
   
@@ -583,6 +621,8 @@ void testSensors()
   
     // read pump sensor
     invertPump = readSensor(SENSOR_1_DATA);
+
+    debugPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
 
     // change condition after 10 seconds
     if(millis() - sensorTestTime > 10000)
@@ -623,7 +663,7 @@ void loop()
   }
   else
   {
-    evaluatePumpAlarm();
+    evaluateAlarms();
     evaluateTankState();
   }
 
@@ -653,9 +693,9 @@ void readEnclosureTemperature()
 
 
 /**
- * Evaluates the expected pump on/off state alarm
+ * Evaluates the expected alarms
  **/
-void evaluatePumpAlarm()
+void evaluateAlarms()
 {
   if(dt.hour >= 5 && dt.hour <= 12)
   {
@@ -679,6 +719,7 @@ void evaluatePumpAlarm()
 int readSensor(int pin)
 {
   // mock delayed change here
+  /*
   long timeSince = millis() - initialReadTime;
   if(timeSince >= 30000)
   { 
@@ -692,6 +733,7 @@ int readSensor(int pin)
       return 0;
     }
   }
+  */
 
   
   return digitalRead(pin);
