@@ -63,7 +63,7 @@ boolean beeping;
 boolean debug = true;
 
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
-const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
+const long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
 
 String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
@@ -111,6 +111,7 @@ struct Notification {
    int high;
    int pump;
    float temperature;
+   int health;
    char message[80] = "";
    long queue_time;
    long send_time;
@@ -146,12 +147,19 @@ dht DHT;
 float temperature;
 boolean useRTCTemperature = false;
 boolean inited = false;
-long initialReadTime =0;
+long initialReadTime = 0;
 long minInitialSensorReadTime = 10000;
+
+boolean sensorCheck = false;
+long sensorTestTime = 0;
+boolean sensorsInvert = false;
 
 int low, mid, high, pump;
 long lastLowChange, lastMidChange, lastHighChange, lastPumpChange;
+int normalLow, normalMid, normalHigh, normalPump;
+int invertLow, invertMid, invertHigh, invertPump;
 
+int health = 1;
 
 void setup()
 {
@@ -174,7 +182,7 @@ void setup()
 
 
   // give the hardware some time to initialize
-  //delay(20000);  
+  delay(10000);  
   
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -516,20 +524,108 @@ void initSensors()
 
 
 
+
+void doSensorTest()
+{
+  systemLedOn();
+  
+  sensorCheck = true;
+  sensorTestTime = millis();
+  sensorsInvert = false;
+}
+
+
+
+void cancelSensorTest()
+{
+  systemLedOff();
+  
+  sensorCheck = false;
+  sensorTestTime = millis();
+  sensorsInvert = false;
+}
+
+
+
+void testSensors()
+{
+
+  if(!sensorsInvert)
+  {
+    // read bottom sensor
+    normalLow = readSensor(SENSOR_4_DATA);
+  
+    // read middle sensot
+    normalMid = readSensor(SENSOR_3_DATA);
+  
+    // read top sensot
+    normalHigh = readSensor(SENSOR_2_DATA);
+  
+    // read pump sensor
+    normalPump = readSensor(SENSOR_1_DATA);
+
+    // change condition after 10seconds
+    if(millis() - sensorTestTime > 10000){
+      sensorTestTime = millis();
+      sensorsInvert = true;
+    }
+  }
+  else 
+  {
+    // read bottom sensor
+    invertLow = readSensor(SENSOR_4_DATA);
+  
+    // read middle sensot
+    invertMid = readSensor(SENSOR_3_DATA);
+  
+    // read top sensor
+    invertHigh = readSensor(SENSOR_2_DATA);
+  
+    // read pump sensor
+    invertPump = readSensor(SENSOR_1_DATA);
+
+    // change condition after 10 seconds
+    if(millis() - sensorTestTime > 10000)
+    {
+      // cancel test
+      cancelSensorTest();  
+
+      // evaluate result
+      if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
+      {
+        health = 1;
+        notifyURL("Sensors functioning normally!");
+      }
+      else
+      {
+        health = 0;
+        notifyURL("Sensors problem detected!");
+      }
+    }
+  }
+}
+
+
+
 void loop()
 {
   dt = clock.getDateTime();
+
+  readEnclosureTemperature();
 
   if(!inited)
   {
     initSensors();  
   }
-
-  readEnclosureTemperature();
-
-  evaluatePumpAlarm();
-
-  evaluateTankState();
+  else if(sensorCheck)
+  {
+    testSensors();
+  }
+  else
+  {
+    evaluatePumpAlarm();
+    evaluateTankState();
+  }
 
   dispatchPendingNotification();
   
@@ -580,10 +676,23 @@ void evaluatePumpAlarm()
 
 
 
-
 int readSensor(int pin)
 {
   // mock delayed change here
+  long timeSince = millis() - initialReadTime;
+  if(timeSince >= 30000)
+  { 
+    if(pin == SENSOR_2_DATA){
+      return 1;
+    }
+  }
+  else if(timeSince >= 20000)
+  { 
+    if(pin == SENSOR_2_DATA){
+      return 0;
+    }
+  }
+
   
   return digitalRead(pin);
 }
@@ -748,7 +857,11 @@ void evaluateTankState()
       high = readSensor(SENSOR_2_DATA);
       pump = readSensor(SENSOR_1_DATA);
     }
-  
+
+
+    debugPrint("=======================================================================");
+    debugPrint(String(pump) + "|" + String(high) + "|" + String(mid) + "|" + String(low));
+    
   
     // detect change
     trackSensorChanges(low, mid, high, pump);
@@ -792,11 +905,9 @@ void evaluateTankState()
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
   
   
-    /***************************/
-    debugPrint("low = " + String(tankState.low));
-    debugPrint("mid = " + String(tankState.mid));
-    debugPrint("high = " + String(tankState.high));
-    debugPrint("pump = " + String(tankState.pump));
+    /***************************/    
+    debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
+    debugPrint("=======================================================================");
     debugPrint("state changed = " + String(stateChanged));
 
 
@@ -910,7 +1021,10 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
   
   if(low != tankState.low)
   {
-    lastLowChange = currentTimeStamp;
+    if(lastLowChange == 0)
+    {
+      lastLowChange = currentTimeStamp;
+    }
   }
   else
   {
@@ -920,7 +1034,10 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 
   if(mid != tankState.mid)
   {
-    lastMidChange = currentTimeStamp;
+    if(lastMidChange == 0)
+    {
+      lastMidChange = currentTimeStamp;
+    }
   }
   else
   {
@@ -930,7 +1047,10 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 
   if(high != tankState.high)
   {
-    lastHighChange = currentTimeStamp;
+    if(lastHighChange == 0)
+    {
+      lastHighChange = currentTimeStamp;
+    }
   }
   else
   {
@@ -940,7 +1060,10 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 
   if(pump != tankState.pump)
   {
-    lastPumpChange = currentTimeStamp;
+    if(lastPumpChange == 0)
+    {
+      lastPumpChange = currentTimeStamp;
+    }
   }
   else
   {
@@ -984,6 +1107,8 @@ void notifyURL(String message)
   message.toCharArray(notice.message, 80);
   notice.queue_time = 0;
   notice.send_time = 0;
+  notice.health = health;
+  
   
   enqueueNotification(notice);
 }
@@ -1037,7 +1162,7 @@ void dispatchPendingNotification()
       data+="&";
       data+="message="+String(notice.message);
       data+="&";
-      data+="health="+String(1);
+      data+="health="+String(notice.health);
       data+="&";
       data+="temperature="+String(notice.temperature);
       data+="&";
