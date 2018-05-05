@@ -28,9 +28,17 @@
 #define SENSOR_4_DATA 38 //data - green | yellow
 
 // indicators
-#define LED_MAINTAINENCE 32
+#define ALARM 40
+#define LED_MID 42
+#define LED_HIGH 43
+#define LED_SYSTEM 44
+#define LED_PUMP 45
+#define LED_LOW 46
 
-#define BEEPER 11
+
+
+
+#define BEEPER 12
 
 #define NOTICE_LIMIT 5
 
@@ -86,6 +94,17 @@ struct SensorState {
 };
 
 
+struct IndicatorState {
+   int low = 0;
+   int mid = 0;
+   int high = 0;
+   int pump = 0;
+   int sys = 0;
+   int alarm = 0;
+   long lastupdate = 0;
+};
+
+
 struct Notification {
    int low;
    int mid;
@@ -118,6 +137,7 @@ QueueArray <Notification> queue;
 Settings conf = {};
 TankState tankState = {};
 SensorState sensors = {};
+IndicatorState indicators = {};
 
 boolean posting;
 boolean stateChanged = false;
@@ -154,7 +174,7 @@ void setup()
 
 
   // give the hardware some time to initialize
-  delay(20000);  
+  //delay(20000);  
   
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -203,10 +223,157 @@ void setup()
   bottomSensorOn();
 
 
+  // init indicators
+  pinMode(ALARM, OUTPUT);
+  digitalWrite(ALARM, LOW);
+
+  pinMode(LED_MID, OUTPUT);
+  digitalWrite(LED_MID, LOW);
+
+  pinMode(LED_HIGH, OUTPUT);
+  digitalWrite(LED_HIGH, LOW);
+
+  pinMode(LED_SYSTEM, OUTPUT);
+  digitalWrite(LED_SYSTEM, LOW);
+  
+  pinMode(LED_PUMP, OUTPUT);
+  digitalWrite(LED_PUMP, LOW);
+  
+  pinMode(LED_LOW, OUTPUT);
+  digitalWrite(LED_LOW, LOW);
+
+
   /* Misc init */  
   initialReadTime = millis();
 }
 
+
+
+
+void lowLedOn()
+{
+  if(indicators.low == 0)
+  {
+    digitalWrite(LED_LOW, HIGH);
+    indicators.low = 1;
+  }
+}
+
+
+void lowLedOff()
+{
+  if(indicators.low == 1)
+  {
+    digitalWrite(LED_LOW, LOW);
+    indicators.low = 0;
+  }
+}
+
+
+
+void midLedOn()
+{
+  if(indicators.mid == 0)
+  {
+    digitalWrite(LED_MID, HIGH);
+    indicators.mid = 1;
+  }
+}
+
+
+void midLedOff()
+{
+  if(indicators.mid == 1)
+  {
+    digitalWrite(LED_MID, LOW);
+    indicators.mid = 0;
+  }
+}
+
+
+
+
+void highLedOn()
+{
+  if(indicators.high == 0)
+  {
+    digitalWrite(LED_HIGH, HIGH);
+    indicators.high = 1;
+  }
+}
+
+
+void highLedOff()
+{
+  if(indicators.high == 1)
+  {
+    digitalWrite(LED_HIGH, LOW);
+    indicators.high = 0;
+  }
+}
+
+
+
+void pumpLedOn()
+{
+  if(indicators.pump == 0)
+  {
+    digitalWrite(LED_PUMP, HIGH);
+    indicators.pump = 1;
+  }
+}
+
+
+void pumpLedOff()
+{
+  if(indicators.pump == 1)
+  {
+    digitalWrite(LED_PUMP, LOW);
+    indicators.pump = 0;
+  }
+}
+
+
+void systemLedOn()
+{
+  if(indicators.sys == 0)
+  {
+    digitalWrite(LED_SYSTEM, HIGH);
+    indicators.sys = 1;
+  }
+}
+
+
+void systemLedOff()
+{
+  if(indicators.sys == 1)
+  {
+    digitalWrite(LED_SYSTEM, LOW);
+    indicators.sys = 0;
+  }
+}
+
+
+
+
+void alarmOn()
+{
+  if(indicators.alarm == 0)
+  {
+    digitalWrite(ALARM, HIGH);
+    indicators.alarm = 1;
+  }
+}
+
+
+void alarmOff()
+{
+  if(indicators.alarm == 1)
+  {
+    digitalWrite(ALARM, LOW);
+    indicators.alarm = 0;
+  }
+}
 
 
 
@@ -315,31 +482,35 @@ void pumpSensorOff()
 
 
 
-void readSensors()
+/* First read of sensors as soon as system starts */
+void initSensors()
 {
+  // indicate system startup
+  systemLedOn();
+  
   // initially we read in all sensors  
-
+  
   // read bottom sensor
-  tankState.low = digitalRead(SENSOR_4_DATA);
+  tankState.low = readSensor(SENSOR_4_DATA);
 
   // read middle sensot
-  tankState.mid = digitalRead(SENSOR_3_DATA);
+  tankState.mid = readSensor(SENSOR_3_DATA);
 
   // read top sensot
-  tankState.high = digitalRead(SENSOR_2_DATA);
+  tankState.high = readSensor(SENSOR_2_DATA);
 
   // read pump sensor
-  tankState.pump = digitalRead(SENSOR_1_DATA);
+  tankState.pump = readSensor(SENSOR_1_DATA);
 
   debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
-
+  
   // initial read time
-  if(millis() - initialReadTime > minInitialSensorReadTime){
-    if(!inited){
+  if(millis() - initialReadTime > minInitialSensorReadTime)
+  {
       inited = true;
       debugPrint("inited");
+      systemLedOff();
       notifyURL("System Started!");
-    }
   }
 }
 
@@ -349,7 +520,10 @@ void loop()
 {
   dt = clock.getDateTime();
 
-  readSensors();  
+  if(!inited)
+  {
+    initSensors();  
+  }
 
   readEnclosureTemperature();
 
@@ -404,6 +578,15 @@ void evaluatePumpAlarm()
   }
 }
 
+
+
+
+int readSensor(int pin)
+{
+  // mock delayed change here
+  
+  return digitalRead(pin);
+}
 
 
 
@@ -482,7 +665,7 @@ void evaluateTankState()
           }
     
           // read mid
-          mid = digitalRead(SENSOR_3_DATA);
+          mid = readSensor(SENSOR_3_DATA);
         }
         else if(tankState.mid == 1)
         {
@@ -504,7 +687,7 @@ void evaluateTankState()
           }
     
           // read low
-          low = digitalRead(SENSOR_4_DATA);
+          low = readSensor(SENSOR_4_DATA);
         }
         else if(tankState.low == 1)
         {
@@ -560,10 +743,10 @@ void evaluateTankState()
       
   
       // read sensor data
-      low = digitalRead(SENSOR_4_DATA);
-      mid = digitalRead(SENSOR_3_DATA);
-      high = digitalRead(SENSOR_2_DATA);
-      pump = digitalRead(SENSOR_1_DATA);
+      low = readSensor(SENSOR_4_DATA);
+      mid = readSensor(SENSOR_3_DATA);
+      high = readSensor(SENSOR_2_DATA);
+      pump = readSensor(SENSOR_1_DATA);
     }
   
   
@@ -603,6 +786,10 @@ void evaluateTankState()
       stateChanged = true;
       tankState.pump = pump;
     }
+
+
+    // Indicate change
+    updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
   
   
     /***************************/
@@ -667,6 +854,53 @@ boolean hasPumpChanged()
 {
   long currentTimeStamp = millis();
   return ((currentTimeStamp - lastPumpChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
+}
+
+
+void updateIndicators(int &low, int &mid, int &high, int &pump)
+{
+  // update low indicator
+  if(low == 1)
+  {
+    lowLedOn();
+  }
+  else
+  {
+    lowLedOff();
+  }
+
+
+  // update mid indicator
+  if(mid == 1)
+  {
+    midLedOn();
+  }
+  else
+  {
+    midLedOff();
+  }
+
+
+  // update high indicator
+  if(high == 1)
+  {
+   highLedOn();
+  }
+  else
+  {
+    highLedOff();
+  }
+
+
+  // update high indicator
+  if(pump == 1)
+  {
+   pumpLedOn();
+  }
+  else
+  {
+    pumpLedOff();
+  }
 }
 
 
