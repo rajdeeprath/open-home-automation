@@ -63,6 +63,8 @@ boolean beeping;
 boolean debug = true;
 int echo = 1;
 
+String subMessage;
+
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
@@ -105,6 +107,7 @@ struct IndicatorState {
    int pump = 0;
    int sys = 0;
    int alarm = 0;
+   int beeper = 0;
    long lastupdate = 0;
 };
 
@@ -258,13 +261,34 @@ void setup()
   pinMode(LED_LOW, OUTPUT);
   digitalWrite(LED_LOW, LOW);
 
+  pinMode(BEEPER, OUTPUT);
+  digitalWrite(BEEPER, LOW);
+
 
   /* Misc init */  
-  initialReadTime = millis();
-
-  
+  initialReadTime = millis(); 
 }
 
+
+
+void beeperOn()
+{
+  if(indicators.beeper == 0)
+  {
+    digitalWrite(BEEPER, HIGH);
+    indicators.beeper = 1;
+  }
+}
+
+
+void beeperOff()
+{
+  if(indicators.beeper == 1)
+  {
+    digitalWrite(BEEPER, LOW);
+    indicators.beeper = 0;
+  }
+}
 
 
 
@@ -523,13 +547,30 @@ void initSensors()
   debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
   
   // initial read time
-
+  
   if(millis() - initialReadTime > minInitialSensorReadTime)
   {
       inited = true;
       debugPrint("inited");
       systemLedOff();
-      notifyURL("System Started! Water Level ~ 50%");
+
+      String message = "";
+
+      // evaluate
+      if(tankState.high == 1)
+      {
+        message = "Water Level @ 100%";
+      }
+      else if(tankState.mid == 1)
+      {
+        message = "Water Level 50% - 100%";
+      }
+      else if(tankState.low == 1)
+      {
+        message = "Water Level 10% - 50%";
+      }
+      
+      notifyURL("System Started!\n[" + message + "]");
 
       doSensorTest();
   }
@@ -650,6 +691,7 @@ void testSensors()
       }
       else
       {
+        beeperOn();
         health = 0;
         systemLedOn();
         notifyURL("Sensors problem detected!");
@@ -691,8 +733,11 @@ void loop()
   else
   {
     evaluateAlarms();
-    evaluateTankState();
-    doMiscTasks();
+    if(health == 1)
+    {
+      evaluateTankState();
+      doMiscTasks();
+    }
   }
 
   dispatchPendingNotification();
@@ -790,7 +835,7 @@ void evaluateTankState()
       return;
     }
 
-
+    subMessage = "";
     stateChanged = false;
     
   
@@ -952,6 +997,15 @@ void evaluateTankState()
     // update low level state
     if(hasLowChanged())
     {
+      if(low == 1)
+      {
+        subMessage = "Water Level risen to 10% ";
+      }
+      else
+      {
+        subMessage = "Water Level dropped below 10% ";
+      }
+      
       stateChanged = true;
       tankState.low = low;
     }
@@ -960,6 +1014,15 @@ void evaluateTankState()
     // update mid level state
     if(hasMidChanged())
     {
+      if(mid == 1)
+      {
+        subMessage = "Water Level risen to 50% ";
+      }
+      else
+      {
+        subMessage = "Water Level dropped below 50% ";
+      }
+      
       stateChanged = true;
       tankState.mid = mid;
     }
@@ -969,6 +1032,15 @@ void evaluateTankState()
     // update high level state
     if(hasHighChanged())
     {
+      if(high == 1)
+      {
+        subMessage = "Water Level risen to 100% ";
+      }
+      else
+      {
+        subMessage = "Water Level dropped below 100% ";
+      }
+      
       stateChanged = true;
       tankState.high = high;
     }
@@ -978,6 +1050,15 @@ void evaluateTankState()
     // update pump level state
     if(hasPumpChanged())
     {
+      if(pump == 1)
+      {
+        subMessage = "Pump started ";
+      }
+      else
+      {
+        subMessage = "Pump stopped ";
+      }
+      
       stateChanged = true;
       tankState.pump = pump;
     }
@@ -1002,25 +1083,31 @@ void evaluateTankState()
     {
       String message = "";
 
-      // evaluate
-      if(tankState.high == 1)
+      if(subMessage == "")
       {
-        message = "Water Level ~ 100%";
-      }
-      else if(tankState.mid == 1)
-      {
-        message = "Water Level ~ 50%";
-      }
-      else if(tankState.low == 1)
-      {
-        message = "Water Level ~ 10%";
-      }
+        // evaluate
+        if(tankState.high == 1)
+        {
+          message = "Water Level @ 100%";
+        }
+        else if(tankState.mid == 1)
+        {
+          message = "Water Level 50% - 100%";
+        }
+        else if(tankState.low == 1)
+        {
+          message = "Water Level 10% - 50%";
+        }
 
-      // dispatch
-      if(message != ""){
-        notifyURL(message);
+        // dispatch
+        if(message != ""){
+          notifyURL(message);
+        }
       }
-      
+      else
+      {
+          notifyURL(subMessage);
+      }   
     }
 }
 
@@ -1314,6 +1401,7 @@ void dispatchPendingNotification()
       data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
 
       debugPrint(data);
+//      client.setClientTimeout(5000);
       
       if (client.connect("iot.flashvisions.com",80)) 
       {
