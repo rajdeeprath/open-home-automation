@@ -10,12 +10,12 @@
 #define SENSOR_1_POWER 29
 #define SENSOR_1_LEVEL 31
 #define SENSOR_1_DATA 33
-//#define SENSOR_1_DATA A10
 
 // top sensor
 #define SENSOR_2_POWER 28
 #define SENSOR_2_LEVEL 30
 #define SENSOR_2_DATA 32
+//#define SENSOR_2_DATA A15
 
 // middle sensor
 #define SENSOR_3_POWER 35 //vcc - orange | brown
@@ -213,7 +213,7 @@ void setup()
   // pump sensor
   pinMode(SENSOR_1_POWER, OUTPUT); //vcc
   pinMode(SENSOR_1_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_1_DATA, INPUT_PULLUP);//data
+  pinMode(SENSOR_1_DATA, INPUT);//data
 
   pumpSensorOn();
 
@@ -221,7 +221,7 @@ void setup()
   // top sensor
   pinMode(SENSOR_2_POWER, OUTPUT); //vcc
   pinMode(SENSOR_2_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_2_DATA, INPUT_PULLUP);//data
+  pinMode(SENSOR_2_DATA, INPUT);//data
 
   topSensorOn();
 
@@ -229,7 +229,7 @@ void setup()
   // middle sensor
   pinMode(SENSOR_3_POWER, OUTPUT); //vcc
   pinMode(SENSOR_3_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_3_DATA, INPUT_PULLUP);//data
+  pinMode(SENSOR_3_DATA, INPUT);//data
   
   middleSensorOn();
 
@@ -237,7 +237,7 @@ void setup()
   // bottom sensor
   pinMode(SENSOR_4_POWER, OUTPUT); //vcc
   pinMode(SENSOR_4_LEVEL, OUTPUT);//level
-  pinMode(SENSOR_4_DATA, INPUT_PULLUP);//data
+  pinMode(SENSOR_4_DATA, INPUT);//data
 
   bottomSensorOn();
 
@@ -798,6 +798,16 @@ void evaluateAlarms()
   }
 }
 
+
+
+int readSensorAnalogToDigital(int pin)
+{
+  int val = analogRead(pin);
+  float volts = val * (5.0 / 1023.0);
+ // debugPrint(String(volts));
+
+  return (volts >= 4)?1:0;
+}
 
 
 int readSensor(int pin)
@@ -1401,8 +1411,7 @@ void dispatchPendingNotification()
       data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
 
       debugPrint(data);
-//      client.setClientTimeout(5000);
-      
+       
       if (client.connect("iot.flashvisions.com",80)) 
       {
         debugPrint("connected");
@@ -1421,7 +1430,7 @@ void dispatchPendingNotification()
           client.stop();
         }
       }
-  
+      
       posting = false;
       last_notify = currentTimeStamp;
     }
