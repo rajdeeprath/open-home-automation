@@ -57,10 +57,14 @@ boolean MAINTAINENCE_MODE = false;
 
 long last_notify = 0;
 long lastBeepStateChange;
+long lastPumpLedUpdate;
+
+long currentTimeStamp;
+
 boolean systemFault;
 boolean beeping;
 
-boolean debug = true;
+boolean debug = false;
 int echo = 1;
 
 String subMessage;
@@ -169,6 +173,7 @@ int invertLow, invertMid, invertHigh, invertPump;
 
 int health = 1;
 boolean SENSOR_TEST_EVENT = false;
+int INSUFFICIENTWATER = 0;
 long lastSensorTest = 0;
 
 void setup()
@@ -193,7 +198,7 @@ void setup()
 
   // give the hardware some time to initialize
   delay(20000);  
-  debugPrint("Preparing to start");
+  systemPrint("Preparing to start");
   
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -376,6 +381,25 @@ void pumpLedOff()
 }
 
 
+void blinkPumpLed()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastPumpLedUpdate > 2000)
+  {
+    if(indicators.pump == 1)
+    {
+      pumpLedOff();
+    }
+    else if(indicators.pump == 0)
+    {
+      pumpLedOn();
+    }
+    lastPumpLedUpdate = currentTimeStamp;
+  }
+}
+
+
 void systemLedOn()
 {
   if(indicators.sys == 0)
@@ -544,14 +568,16 @@ void initSensors()
   // read pump sensor
   tankState.pump = readSensor(SENSOR_1_DATA);
 
-  debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
+  if(debug){
+    systemPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
+  }
   
   // initial read time
   
   if(millis() - initialReadTime > minInitialSensorReadTime)
   {
       inited = true;
-      debugPrint("inited");
+      systemPrint("inited");
       systemLedOff();
 
       String message = "";
@@ -568,6 +594,10 @@ void initSensors()
       else if(tankState.low == 1)
       {
         message = "Water Level 10% - 50%";
+      }
+      else
+      {
+        message = "Water Level Critical! (< 10%)";
       }
       
       notifyURL("System Started!\n[" + message + "]");
@@ -587,7 +617,7 @@ void doSensorTest()
   sensorTestTime = millis();
   sensorsInvert = false;
 
-  debugPrint("Starting sensor test");
+  systemPrint("Starting sensor test");
 
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -603,7 +633,7 @@ void invertSensorLevels()
   sensorTestTime = millis();
   sensorsInvert = true;
 
-  debugPrint("Sensor levels inverted");
+  systemPrint("Sensor levels inverted");
       
   digitalWrite(SENSOR_1_LEVEL, LOW); // level
   digitalWrite(SENSOR_2_LEVEL, LOW); // level
@@ -621,7 +651,7 @@ void cancelSensorTest()
   sensorTestTime = millis();
   sensorsInvert = false;
 
-  debugPrint("Stopping sensor test");
+  systemPrint("Stopping sensor test");
   
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -635,7 +665,7 @@ void testSensors()
 {
   if(!sensorsInvert)
   {
-    debugPrint("Checking normal sensor states");
+    systemPrint("Checking normal sensor states");
     
     // read bottom sensor
     normalLow = readSensor(SENSOR_4_DATA);
@@ -649,7 +679,9 @@ void testSensors()
     // read pump sensor
     normalPump = readSensor(SENSOR_1_DATA);
 
-    debugPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
+    if(debug){
+      systemPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
+    }
 
     // change condition after 10seconds
     if(millis() - sensorTestTime > 5000){
@@ -658,7 +690,7 @@ void testSensors()
   }
   else 
   {
-    debugPrint("Checking invert sensor states");
+    systemPrint("Checking invert sensor states");
     
     // read bottom sensor
     invertLow = readSensor(SENSOR_4_DATA);
@@ -672,8 +704,10 @@ void testSensors()
     // read pump sensor
     invertPump = readSensor(SENSOR_1_DATA);
 
-    debugPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
-
+    if(debug){
+      systemPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
+    }
+    
     // change condition after 10 seconds
     if(millis() - sensorTestTime > 5000)
     {
@@ -704,7 +738,7 @@ void testSensors()
 
 void doMiscTasks()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   if(SENSOR_TEST_EVENT)
   {
     if((currentTimeStamp > 0) && (currentTimeStamp - lastSensorTest > SENSOR_TEST_THRESHOLD))
@@ -804,7 +838,7 @@ int readSensorAnalogToDigital(int pin)
 {
   int val = analogRead(pin);
   float volts = val * (5.0 / 1023.0);
- // debugPrint(String(volts));
+ // systemPrint(String(volts));
 
   return (volts >= 4)?1:0;
 }
@@ -995,10 +1029,10 @@ void evaluateTankState()
       pump = readSensor(SENSOR_1_DATA);
     }
 
-
-    debugPrint("=======================================================================");
-    debugPrint(String(pump) + "|" + String(high) + "|" + String(mid) + "|" + String(low));
-    
+    if(debug){
+      systemPrint("=======================================================================");
+      systemPrint(String(pump) + "|" + String(high) + "|" + String(mid) + "|" + String(low));
+    }
   
     // detect change
     trackSensorChanges(low, mid, high, pump);   
@@ -1073,19 +1107,22 @@ void evaluateTankState()
       tankState.pump = pump;
     }
 
-
     // monitor overflow
     trackOverFlow(tankState.pump, tankState.high);
 
+    // monitor undrflow
+    trackInsufficientWater(tankState.low, tankState.mid, tankState.high, tankState.pump);
 
     // Indicate change
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
 
   
-    /***************************/    
-    debugPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
-    debugPrint("=======================================================================");
-    debugPrint("state changed = " + String(stateChanged));
+    /***************************/ 
+    if(debug){   
+      systemPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
+      systemPrint("=======================================================================");
+      systemPrint("state changed = " + String(stateChanged));
+    }
 
 
     // evaluate and dispatch message
@@ -1108,6 +1145,10 @@ void evaluateTankState()
         {
           message = "Water Level 10% - 50%";
         }
+        else
+        {
+          message = "Water Level Critical! (< 10%)";
+        }
 
         // dispatch
         if(message != ""){
@@ -1125,21 +1166,21 @@ void evaluateTankState()
 
 boolean hasLowChanged()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   return ((currentTimeStamp - lastLowChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastLowChange > 0);
 }
 
 
 boolean hasMidChanged()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   return ((currentTimeStamp - lastMidChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastMidChange > 0);
 }
 
 
 boolean willOverflow()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   return ((currentTimeStamp - lastOverflowCondition) > OVERFLOW_STATE_THRESHOLD && lastOverflowCondition > 0);
 }
 
@@ -1147,15 +1188,28 @@ boolean willOverflow()
 
 boolean hasHighChanged()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   return ((currentTimeStamp - lastHighChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastHighChange > 0);
 }
 
 
 boolean hasPumpChanged()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   return ((currentTimeStamp - lastPumpChange) > PUMP_SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
+}
+
+
+void trackInsufficientWater(int &low, int &mid, int &high, int &pump)
+{
+  if(low == 0 && mid == 0 && high == 0 && pump == 0)
+  {
+    INSUFFICIENTWATER = 1;
+  }
+  else
+  {
+    INSUFFICIENTWATER = 0;
+  }
 }
 
 
@@ -1197,11 +1251,20 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
   // update high indicator
   if(pump == 1)
   {
-   pumpLedOn();
+    pumpLedOn();
   }
   else
   {
-    pumpLedOff();
+    if(INSUFFICIENTWATER == 1)
+    {
+      // show indicator
+      blinkPumpLed();
+    }
+    else
+    {
+      //stop indicator
+      pumpLedOff();
+    }
   }
 
 
@@ -1221,7 +1284,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
 
 void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   
   if(low != tankState.low)
   {
@@ -1279,12 +1342,12 @@ void trackSensorChanges(int &low, int &mid, int &high, int &pump)
 
 void trackOverFlow(int pump, int high)
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   
   // track overflow
   if(pump == 1 && high == 1)
   {
-    debugPrint("Overflow condition");    
+    systemPrint("Overflow condition");    
     
     if(lastOverflowCondition == 0)
     {
@@ -1322,7 +1385,7 @@ void doReset()
  */
 void notifyURL(String message)
 {
-  debugPrint("Preparing notification");
+  systemPrint("Preparing notification");
   
   Notification notice = {};
   notice.low = tankState.low;
@@ -1347,7 +1410,7 @@ void enqueueNotification(struct Notification notice)
    notice.queue_time = millis();
 
    if(queue.count() < NOTICE_LIMIT){
-    //debugPrint("Pushing notification to queue");
+    //systemPrint("Pushing notification to queue");
     queue.enqueue(notice);
    }
 }
@@ -1358,10 +1421,8 @@ void enqueueNotification(struct Notification notice)
 /**
  * Prints message to serial
  */
-void debugPrint(String message){
-  if(debug){
+void systemPrint(String message){
     Serial.println(message);
-  }
 }
 
 
@@ -1372,14 +1433,16 @@ void debugPrint(String message){
  */
 void dispatchPendingNotification()
 {
-  long currentTimeStamp = millis();
+  currentTimeStamp = millis();
   if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      debugPrint("Running Notification service");
-
-      debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      if(debug){
+        systemPrint("Running Notification service");
+        systemPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      }
+      
       Notification notice = queue.dequeue();
       notice.send_time = millis();
   
@@ -1410,11 +1473,11 @@ void dispatchPendingNotification()
       data+="&";
       data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
 
-      debugPrint(data);
+      //systemPrint(data);
        
       if (client.connect("iot.flashvisions.com",80)) 
       {
-        debugPrint("connected");
+        systemPrint("connected");
         client.println("POST /index.php HTTP/1.1");
         client.println("Host: iot.flashvisions.com");
         client.println("Content-Type: application/x-www-form-urlencoded;");
@@ -1426,7 +1489,7 @@ void dispatchPendingNotification()
         client.println();
   
         if (client.connected()){
-          debugPrint("disconnecting.");
+          systemPrint("disconnecting.");
           client.stop();
         }
       }
