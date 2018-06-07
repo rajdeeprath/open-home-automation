@@ -75,7 +75,6 @@ const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
 const long OVERFLOW_STATE_THRESHOLD = 60000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 
-String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    long lastupdate;
@@ -580,32 +579,39 @@ void initSensors()
       systemPrint("inited");
       systemLedOff();
 
-      String message = "";
-
-      // evaluate
-      if(tankState.high == 1)
-      {
-        message = "Water Level @ 100%";
-      }
-      else if(tankState.mid == 1)
-      {
-        message = "Water Level 50% - 100%";
-      }
-      else if(tankState.low == 1)
-      {
-        message = "Water Level 10% - 50%";
-      }
-      else
-      {
-        message = "Water Level Critical! (< 10%)";
-      }
+      String message = buildWaterLevelMessage(tankState);
       
-      notifyURL("System Started!\n[" + message + "]");
+      notifyURL("System Reset!\n[" + message + "]");
 
       doSensorTest();
   }
 }
 
+
+
+String buildWaterLevelMessage(TankState &tankState)
+{
+  String message = "";
+
+  if(tankState.high == 1)
+  {
+    message = "Water Level @ 100%";
+  }
+  else if(tankState.mid == 1)
+  {
+    message = "Water Level 50% - 100%";
+  }
+  else if(tankState.low == 1)
+  {
+    message = "Water Level 10% - 50%";
+  }
+  else
+  {
+    message = "Water Level Critical! (< 10%)";
+  }
+
+  return message;
+}
 
 
 
@@ -1094,13 +1100,14 @@ void evaluateTankState()
     // update pump level state
     if(hasPumpChanged())
     {
+      String levelInfo = buildWaterLevelMessage(tankState);
       if(pump == 1)
       {
-        subMessage = "Pump started ";
+        subMessage = "Pump Started!\n[" + levelInfo + "]";
       }
       else
       {
-        subMessage = "Pump stopped ";
+        subMessage = "Pump Stopped!\n[" + levelInfo + "]";
       }
       
       stateChanged = true;
