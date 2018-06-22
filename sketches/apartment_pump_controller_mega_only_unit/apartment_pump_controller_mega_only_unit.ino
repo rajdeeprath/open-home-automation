@@ -601,15 +601,15 @@ String buildWaterLevelMessage(TankState &tankState)
   }
   else if(tankState.mid == 1)
   {
-    message = "Water Level 50% - 100%";
+    message = "Water Level between 50% to 100%";
   }
   else if(tankState.low == 1)
   {
-    message = "Water Level 10% - 50%";
+    message = "Water Level between 10% to 50%";
   }
   else
   {
-    message = "Water Level Critical! (< 10%)";
+    message = "Water Level Critical! (less than 10%)";
   }
 
   return message;
@@ -1189,22 +1189,7 @@ void evaluateTankState()
       if(subMessage == "")
       {
         // evaluate
-        if(tankState.high == 1)
-        {
-          message = "Water Level @ 100%";
-        }
-        else if(tankState.mid == 1)
-        {
-          message = "Water Level 50% - 100%";
-        }
-        else if(tankState.low == 1)
-        {
-          message = "Water Level 10% - 50%";
-        }
-        else
-        {
-          message = "Water Level Critical! (< 10%)";
-        }
+        message = buildWaterLevelMessage(tankState);
 
         // dispatch
         if(message != "")
