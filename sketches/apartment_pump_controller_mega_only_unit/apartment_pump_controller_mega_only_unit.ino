@@ -6,7 +6,6 @@
 #include <dht.h>
 
 
-// pump state sensor
 #define SENSOR_1_POWER 29
 #define SENSOR_1_LEVEL 31
 #define SENSOR_1_DATA 33
@@ -48,7 +47,6 @@
 const String NAME="AMU-PC-001";
 
 DS3231 clock;
-RTCDateTime dt;
 
 
 boolean PUMP_EVENT = false;
@@ -66,6 +64,7 @@ boolean beeping;
 
 boolean debug = false;
 int echo = 1;
+int error = 0;
 
 String subMessage;
 
@@ -126,6 +125,8 @@ struct Notification {
    char message[80] = "";
    long queue_time;
    long send_time;
+   int error=0;
+   int debug=0;
 };
 
 
@@ -581,7 +582,7 @@ void initSensors()
 
       String message = buildWaterLevelMessage(tankState);
       
-      notifyURL("System Reset!\n[" + message + "]");
+      notifyURL("System Reset!\n[" + message + "]", 0, 1);
 
       doSensorTest();
   }
@@ -734,7 +735,7 @@ void testSensors()
         beeperOn();
         health = 0;
         systemLedOn();
-        notifyURL("Sensors problem detected!");
+        notifyURL("Sensors problem detected!", 1);
       }
     }
   }
@@ -887,6 +888,7 @@ void evaluateTankState()
 
     subMessage = "";
     stateChanged = false;
+    error = 0;
     
   
     if(POWER_SAVER)
@@ -1049,15 +1051,33 @@ void evaluateTankState()
     {
       if(low == 1)
       {
-        subMessage = "Water Level risen to 10% ";
+        if(pump == 1)
+        {
+          subMessage = "Water Level risen to 10% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'low' sensor";
+        }
       }
       else
       {
-        subMessage = "Water Level dropped below 10% ";
+        if(mid == 0 && high == 0)
+        {
+          subMessage = "Water Level dropped below 10% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'low' sensor";
+        }
       }
-      
-      stateChanged = true;
-      tankState.low = low;
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.low = low;
+      }
     }
   
   
@@ -1066,15 +1086,33 @@ void evaluateTankState()
     {
       if(mid == 1)
       {
-        subMessage = "Water Level risen to 50% ";
+        if(low == 1 && pump == 1)
+        {
+          subMessage = "Water Level risen to 50% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'mid' sensor";
+        }
       }
       else
       {
-        subMessage = "Water Level dropped below 50% ";
+        if(high == 0)
+        {
+          subMessage = "Water Level dropped below 50% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'mid' sensor";
+        }
       }
-      
-      stateChanged = true;
-      tankState.mid = mid;
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.mid = mid;
+      }
     }
   
   
@@ -1084,15 +1122,25 @@ void evaluateTankState()
     {
       if(high == 1)
       {
-        subMessage = "Water Level risen to 100% ";
+        if(low == 1 && mid ==1 && pump ==1)
+        {
+          subMessage = "Water Level risen to 100% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'high' sensor";
+        }
       }
       else
       {
         subMessage = "Water Level dropped below 100% ";
       }
-      
-      stateChanged = true;
-      tankState.high = high;
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.high = high;
+      }
     }
   
   
@@ -1158,13 +1206,28 @@ void evaluateTankState()
         }
 
         // dispatch
-        if(message != ""){
-          notifyURL(message);
+        if(message != "")
+        {
+          if(error == 0)
+          {
+            notifyURL(message);
+          }
+          else
+          {
+            notifyURL(message, 1);
+          }
         }
       }
       else
       {
+        if(error == 0)
+        {
           notifyURL(subMessage);
+        }
+        else
+        {
+          notifyURL(subMessage, 1);
+        }
       }   
     }
 }
@@ -1369,28 +1432,24 @@ void trackOverFlow(int pump, int high)
 
 
 
-/**
- * Resets the state of the device by resetting configuration data and erasing eeprom
- */
-void doReset()
-{
-  conf.lastupdate = 0;   
-  conf.endpoint_length = 0;
-  conf.reset = 0;
-  conf.notify = 1;
-  memset(conf.endpoint, 0, sizeof(conf.endpoint));
-    
-  //eraseSettings();   
-  delay(1000);
-}
-
-
 
 
 /**
  * Add to Notification queue
  */
 void notifyURL(String message)
+{
+  notifyURL(message, 0);
+}
+
+
+void notifyURL(String message, int error)
+{
+  notifyURL(message, error, 0);
+}
+
+
+void notifyURL(String message, int error, int debug)
 {
   systemPrint("Preparing notification");
   
@@ -1405,6 +1464,8 @@ void notifyURL(String message)
   notice.send_time = 0;
   notice.health = health;
   notice.echo = echo;
+  notice.error = error;
+  notice.debug = debug;
   
   
   enqueueNotification(notice);
@@ -1477,6 +1538,10 @@ void dispatchPendingNotification()
       data+="queue_time="+String(notice.queue_time);
       data+="&";
       data+="send_time="+String(notice.send_time);
+      data+="&";
+      data+="error="+String(notice.error);
+      data+="&";
+      data+="debug="+String(notice.debug);
       data+="&";
       data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
 
