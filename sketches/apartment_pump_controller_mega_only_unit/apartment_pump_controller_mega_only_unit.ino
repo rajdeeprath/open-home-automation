@@ -47,6 +47,7 @@
 const String NAME="AMU-PC-001";
 
 DS3231 clock;
+RTCDateTime dt;
 
 
 boolean PUMP_EVENT = false;
