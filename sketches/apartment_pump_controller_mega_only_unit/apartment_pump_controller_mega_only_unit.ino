@@ -57,6 +57,7 @@ boolean MAINTAINENCE_MODE = false;
 long last_notify = 0;
 long lastBeepStateChange;
 long lastPumpLedUpdate;
+long lastSystemLedUpdate;
 
 long currentTimeStamp;
 
@@ -175,6 +176,7 @@ int invertLow, invertMid, invertHigh, invertPump;
 int health = 1;
 boolean SENSOR_TEST_EVENT = false;
 int INSUFFICIENTWATER = 0;
+int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
 
 void setup()
@@ -397,6 +399,26 @@ void blinkPumpLed()
       pumpLedOn();
     }
     lastPumpLedUpdate = currentTimeStamp;
+  }
+}
+
+
+
+void blinkSystemLed()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastSystemLedUpdate > 2000)
+  {
+    if(indicators.sys == 1)
+    {
+      systemLedOff();
+    }
+    else if(indicators.sys == 0)
+    {
+      systemLedOn();
+    }
+    lastSystemLedUpdate = currentTimeStamp;
   }
 }
 
@@ -1169,9 +1191,11 @@ void evaluateTankState()
     // monitor undrflow
     trackInsufficientWater(tankState.low, tankState.mid, tankState.high, tankState.pump);
 
+    // track error
+    trackSystemError(error);
+
     // Indicate change
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
-
   
     /***************************/ 
     if(debug){   
@@ -1256,6 +1280,19 @@ boolean hasPumpChanged()
 }
 
 
+void trackSystemError(int &error)
+{
+  if(error == 1)
+  {
+    SYSTEM_ERROR = 1;
+  }
+  else
+  {
+    SYSTEM_ERROR = 0;  
+  }
+}
+
+
 void trackInsufficientWater(int &low, int &mid, int &high, int &pump)
 {
   if(low == 0 && mid == 0 && high == 0 && pump == 0)
@@ -1333,6 +1370,19 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    {
       // stop alarm
       alarmOff();
+   }
+
+
+   // update system sensor
+   if(SYSTEM_ERROR)
+   {
+      blinkSystemLed();
+      beeperOn();
+   }
+   else
+   {
+      systemLedOff();
+      beeperOff();
    }
 }
 
