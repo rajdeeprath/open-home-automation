@@ -279,6 +279,18 @@ void setup()
 
 
 
+
+void allIndicatorsOn()
+{
+  lowLedOn();
+  midLedOn();
+  highLedOn();
+  pumpLedOn();
+  systemLedOn();
+  alarmOn();
+}
+
+
 void beeperOn()
 {
   if(indicators.beeper == 0)
