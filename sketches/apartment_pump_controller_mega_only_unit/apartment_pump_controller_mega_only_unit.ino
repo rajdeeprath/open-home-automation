@@ -783,9 +783,22 @@ void doMiscTasks()
   currentTimeStamp = millis();
   if(SENSOR_TEST_EVENT)
   {
-    if((currentTimeStamp > 0) && (currentTimeStamp - lastSensorTest > SENSOR_TEST_THRESHOLD))
+    if(currentTimeStamp > 0)
     {
-      doSensorTest();
+      if(currentTimeStamp > lastSensorTest)
+      {
+        if(currentTimeStamp - lastSensorTest > SENSOR_TEST_THRESHOLD)
+        {
+          notifyURL("Running sensor test", 0, 1);
+          doSensorTest();
+        }
+      }
+      else
+      {
+        notifyURL("Running sensor test", 0, 1);
+        lastSensorTest = currentTimeStamp;
+        doSensorTest();
+      }      
     } 
   }  
 }
@@ -863,8 +876,8 @@ void evaluateAlarms()
   }
 
 
-  // Sensor test at 1 am
-  if(dt.hour == 1 && dt.minute == 0)
+  // Sensor test at 12 am
+  if(dt.hour == 12 && dt.minute == 0 && dt.second == 0)
   {
     SENSOR_TEST_EVENT = true;
   }
@@ -872,6 +885,16 @@ void evaluateAlarms()
   {
     SENSOR_TEST_EVENT = false;
   }
+
+  // reset
+  /*
+  if(dt.hour ==4 && dt.minute == 32 && dt.second == 0)
+  {
+    if(debug){   
+      systemPrint(String("rebooting"));
+    }
+  }
+  */
 }
 
 
