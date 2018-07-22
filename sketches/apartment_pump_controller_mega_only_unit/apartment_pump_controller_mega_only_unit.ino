@@ -129,6 +129,7 @@ struct Notification {
    long send_time;
    int error=0;
    int debug=0;
+   char clocktime[100] = "";
 };
 
 
@@ -1537,7 +1538,7 @@ void notifyURL(String message, int error, int debug)
   notice.echo = echo;
   notice.error = error;
   notice.debug = debug;
-  
+  strcpy(notice.clocktime,  clock.dateFormat("d-m-Y H:i:s", dt));
   
   enqueueNotification(notice);
 }
@@ -1614,7 +1615,7 @@ void dispatchPendingNotification()
       data+="&";
       data+="debug="+String(notice.debug);
       data+="&";
-      data+="time=" + String(clock.dateFormat("d F Y H:i:s",  dt));
+      data+="time=" + String(notice.clocktime);
 
       //systemPrint(data);
        
