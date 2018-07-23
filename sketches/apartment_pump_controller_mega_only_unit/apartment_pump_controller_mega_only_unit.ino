@@ -58,6 +58,7 @@ long last_notify = 0;
 long lastBeepStateChange;
 long lastPumpLedUpdate;
 long lastSystemLedUpdate;
+long lastAlarmUpdate;
 
 long currentTimeStamp;
 
@@ -288,7 +289,7 @@ void allIndicatorsOn()
   highLedOn();
   pumpLedOn();
   systemLedOn();
-  alarmOn();
+  blinkAlarm();
 }
 
 
@@ -415,6 +416,25 @@ void blinkPumpLed()
   }
 }
 
+
+
+void blinkAlarm()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastAlarmUpdate > 600)
+  {
+    if(indicators.alarm == 1)
+    {
+      alarmOff();
+    }
+    else if(indicators.alarm == 0)
+    {
+      alarmOn();
+    }
+    lastAlarmUpdate = currentTimeStamp;
+  }
+}
 
 
 void blinkSystemLed()
@@ -1400,7 +1420,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    if(willOverflow())
    {
       // start alarm
-      alarmOn();
+      blinkAlarm();
    }
    else
    {
