@@ -59,6 +59,7 @@ long lastBeepStateChange;
 long lastPumpLedUpdate;
 long lastSystemLedUpdate;
 long lastAlarmUpdate;
+long overFlowAlarmStart;
 
 long currentTimeStamp;
 
@@ -71,6 +72,7 @@ int error = 0;
 
 String subMessage;
 
+const long OVERFLOW_ALARM_TIME_THRESHOLD = 60000;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
@@ -1419,11 +1421,24 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
 
    if(willOverflow())
    {
-      // start alarm
-      blinkAlarm();
+      if(overFlowAlarmStart == 0){
+        overFlowAlarmStart = currentTimeStamp;
+      }
+
+      if(currentTimeStamp - overFlowAlarmStart < OVERFLOW_ALARM_TIME_THRESHOLD){
+        // start alarm
+        blinkAlarm();
+      }
+      else
+      {
+        // stop alarm
+        alarmOff();
+      }
    }
    else
    {
+      overFlowAlarmStart = 0;
+      
       // stop alarm
       alarmOff();
    }
