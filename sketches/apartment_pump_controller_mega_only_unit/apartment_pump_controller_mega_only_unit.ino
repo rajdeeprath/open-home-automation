@@ -1654,14 +1654,17 @@ void dispatchPendingNotification()
     {
       if(debug){
         systemPrint("Running Notification service");
-        systemPrint("Popping notification from queue. Current size = " + String( queue.count()));
       }
         
       posting = true;
        
       if (client.connect("iot.flashvisions.com",80)) 
       {
-        systemPrint("connected");
+        systemPrint("connected to server");
+
+        if(debug){
+          systemPrint("Popping notification from queue. Current size = " + String( queue.count()));
+        }
 
         Notification notice = queue.dequeue();
         notice.send_time = millis();
@@ -1677,11 +1680,11 @@ void dispatchPendingNotification()
         client.println();
         client.print(data);
         client.println();
-  
-        if (client.connected()){
-          systemPrint("disconnecting.");
-          client.stop();
-        }
+      }
+
+      if (client.connected()){
+        systemPrint("disconnecting.");
+        client.stop();
       }
       
       posting = false;
