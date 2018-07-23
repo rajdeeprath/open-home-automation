@@ -49,6 +49,7 @@ const String NAME="AMU-PC-001";
 DS3231 clock;
 RTCDateTime dt;
 
+String data;
 
 boolean PUMP_EVENT = false;
 boolean POWER_SAVER = false;
@@ -1602,6 +1603,44 @@ void systemPrint(String message){
 
 
 
+/**
+ * 
+ */
+String getPostNotificationString(Notification &notice)
+{
+      String post = "";
+      post+="amu_pc_001=1";
+      post+="&";
+      post+="message="+String(notice.message);
+      post+="&";
+      post+="health="+String(notice.health);
+      post+="&";
+      post+="echo="+String(notice.echo);
+      post+="&";      
+      post+="temperature="+String(notice.temperature);
+      post+="&";
+      post+="low="+String(notice.low);
+      post+="&";
+      post+="mid="+String(notice.mid);
+      post+="&";
+      post+="high="+String(notice.high);
+      post+="&";
+      post+="pump="+String(notice.pump);
+      post+="&";
+      post+="queue_time="+String(notice.queue_time);
+      post+="&";
+      post+="send_time="+String(notice.send_time);
+      post+="&";
+      post+="error="+String(notice.error);
+      post+="&";
+      post+="debug="+String(notice.debug);
+      post+="&";
+      post+="time=" + String(notice.clocktime);
+
+      return post;
+}
+
+
 
 /**
  * Send http(s) Notification to remote url with appropriate parameters and custom message
@@ -1617,46 +1656,18 @@ void dispatchPendingNotification()
         systemPrint("Running Notification service");
         systemPrint("Popping notification from queue. Current size = " + String( queue.count()));
       }
-      
-      Notification notice = queue.dequeue();
-      notice.send_time = millis();
-  
+        
       posting = true;
-  
-      String data = "";
-      data+="amu_pc_001=1";
-      data+="&";
-      data+="message="+String(notice.message);
-      data+="&";
-      data+="health="+String(notice.health);
-      data+="&";
-      data+="echo="+String(notice.echo);
-      data+="&";      
-      data+="temperature="+String(notice.temperature);
-      data+="&";
-      data+="low="+String(notice.low);
-      data+="&";
-      data+="mid="+String(notice.mid);
-      data+="&";
-      data+="high="+String(notice.high);
-      data+="&";
-      data+="pump="+String(notice.pump);
-      data+="&";
-      data+="queue_time="+String(notice.queue_time);
-      data+="&";
-      data+="send_time="+String(notice.send_time);
-      data+="&";
-      data+="error="+String(notice.error);
-      data+="&";
-      data+="debug="+String(notice.debug);
-      data+="&";
-      data+="time=" + String(notice.clocktime);
-
-      //systemPrint(data);
        
       if (client.connect("iot.flashvisions.com",80)) 
       {
         systemPrint("connected");
+
+        Notification notice = queue.dequeue();
+        notice.send_time = millis();
+
+        data = getPostNotificationString(notice);
+        
         client.println("POST /index.php HTTP/1.1");
         client.println("Host: iot.flashvisions.com");
         client.println("Content-Type: application/x-www-form-urlencoded;");
