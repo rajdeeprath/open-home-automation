@@ -4,7 +4,7 @@
 #include <DS3231.h>
 #include <QueueArray.h>
 #include <dht.h>
-
+#include <utility/w5100.h>
 
 #define SENSOR_1_POWER 29
 #define SENSOR_1_LEVEL 31
@@ -33,12 +33,7 @@
 #define LED_SYSTEM 44
 #define LED_PUMP 45
 #define LED_LOW 46
-
-
-
-
 #define BEEPER 12
-
 #define NOTICE_LIMIT 5
 
 // secondary temperature monitor
@@ -201,13 +196,11 @@ void setup()
   clock.begin();
 
   // Set sketch compiling time
-  clock.setDateTime(__DATE__, __TIME__);
-
+  //clock.setDateTime(__DATE__, __TIME__);
 
   // give the hardware some time to initialize
   delay(20000);  
   systemPrint("Preparing to start");
-  
   
   // start the Ethernet connection using a fixed IP address and DNS server:
   Ethernet.begin(mac, ip);
@@ -745,12 +738,12 @@ void testSensors()
     // read pump sensor
     normalPump = readSensor(SENSOR_1_DATA);
 
-    if(debug){
+    //if(debug){
       systemPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
-    }
+    //}
 
-    // change condition after 10seconds
-    if(millis() - sensorTestTime > 5000){
+    // change condition after 8 seconds
+    if(millis() - sensorTestTime > 8000){ 
       invertSensorLevels();      
     }
   }
@@ -770,12 +763,13 @@ void testSensors()
     // read pump sensor
     invertPump = readSensor(SENSOR_1_DATA);
 
-    if(debug){
+    //if(debug){
       systemPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
-    }
+    //}
     
-    // change condition after 10 seconds
-    if(millis() - sensorTestTime > 5000)
+    // change condition after 8 seconds
+    
+    if(millis() - sensorTestTime > 8000)
     {
       // cancel test
       cancelSensorTest();  
