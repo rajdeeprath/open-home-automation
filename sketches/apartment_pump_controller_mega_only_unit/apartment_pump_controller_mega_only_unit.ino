@@ -162,7 +162,8 @@ float temperature;
 boolean useRTCTemperature = false;
 boolean inited = false;
 long initialReadTime = 0;
-long minInitialSensorReadTime = 10000;
+long minInitialSensorReadTime = 20000;
+long minHardwareInitializeTime = 20000;
 
 boolean sensorCheck = false;
 long sensorTestTime = 0;
@@ -199,7 +200,7 @@ void setup()
   //clock.setDateTime(__DATE__, __TIME__);
 
   // give the hardware some time to initialize
-  delay(20000);  
+  delay(minHardwareInitializeTime);  
   systemPrint("Preparing to start");
   
   // start the Ethernet connection using a fixed IP address and DNS server:
@@ -791,6 +792,7 @@ void testSensors()
         notifyURL("Sensors problem detected!", 1);
       }
     }
+    
   }
 }
 
@@ -832,6 +834,7 @@ void loop()
   if(!inited)
   {
     initSensors();  
+    //allIndicatorsOn();
   }
   else if(sensorCheck)
   {
