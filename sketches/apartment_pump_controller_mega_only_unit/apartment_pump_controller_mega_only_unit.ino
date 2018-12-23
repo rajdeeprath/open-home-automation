@@ -164,7 +164,7 @@ boolean inited = false;
 long initialReadTime = 0;
 long minInitialSensorReadTime = 15000;
 long minSensorTestReadtime = 15000;
-long minHardwareInitializeTime = 15000;
+long minHardwareInitializeTime = 20000;
 
 boolean sensorCheck = false;
 long sensorTestTime = 0;
