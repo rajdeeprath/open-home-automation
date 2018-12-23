@@ -162,8 +162,9 @@ float temperature;
 boolean useRTCTemperature = false;
 boolean inited = false;
 long initialReadTime = 0;
-long minInitialSensorReadTime = 20000;
-long minHardwareInitializeTime = 20000;
+long minInitialSensorReadTime = 15000;
+long minSensorTestReadtime = 15000;
+long minHardwareInitializeTime = 15000;
 
 boolean sensorCheck = false;
 long sensorTestTime = 0;
@@ -743,8 +744,8 @@ void testSensors()
       systemPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
     //}
 
-    // change condition after 8 seconds
-    if(millis() - sensorTestTime > 8000){ 
+    // change condition after minSensorTestReadtime seconds
+    if(millis() - sensorTestTime > minSensorTestReadtime){ 
       invertSensorLevels();      
     }
   }
@@ -768,9 +769,9 @@ void testSensors()
       systemPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
     //}
     
-    // change condition after 8 seconds
+    // change condition after minSensorTestReadtime seconds
     
-    if(millis() - sensorTestTime > 8000)
+    if(millis() - sensorTestTime > minSensorTestReadtime)
     {
       // cancel test
       cancelSensorTest();  
@@ -789,10 +790,14 @@ void testSensors()
         beeperOn();
         health = 0;
         systemLedOn();
-        notifyURL("Sensors problem detected!", 1);
+
+        String sensorReport = "Sensors problem detected!";
+        sensorReport = "\n\r";
+        sensorReport = sensorReport + "normalLow="+normalLow+",invertLow="+invertLow+",normalMid="+normalMid+",invertMid="+invertMid;
+        sensorReport = sensorReport + ",normalHigh="+normalHigh+",invertHigh="+invertHigh+",normalPump="+normalPump+",invertPump="+invertPump;
+        notifyURL(sensorReport, 1);
       }
     }
-    
   }
 }
 
@@ -897,8 +902,8 @@ void evaluateAlarms()
   }
 
 
-  // Sensor test at 12 am
-  if(dt.hour == 12 && dt.minute == 0 && dt.second == 0)
+  // Sensor test at 2 pm
+  if(dt.hour == 14 && dt.minute == 0 && dt.second == 0)
   {
     SENSOR_TEST_EVENT = true;
   }
