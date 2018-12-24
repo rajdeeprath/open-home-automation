@@ -181,6 +181,8 @@ int INSUFFICIENTWATER = 0;
 int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
 
+boolean forcePumpOn = false;
+
 void setup()
 {
   // start serial port:
@@ -783,19 +785,36 @@ void testSensors()
       if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
       {
         health = 1;
-        //notifyURL("Sensors functioning normally!");
+        forcePumpOn = false;
       }
       else
       {
-        beeperOn();
-        health = 0;
-        systemLedOn();
-
         String sensorReport = "Sensors problem detected!";
-        sensorReport = "\n\r";
+        sensorReport = sensorReport + "\n\r";
         sensorReport = sensorReport + "normalLow="+normalLow+",invertLow="+invertLow+",normalMid="+normalMid+",invertMid="+invertMid;
         sensorReport = sensorReport + ",normalHigh="+normalHigh+",invertHigh="+invertHigh+",normalPump="+normalPump+",invertPump="+invertPump;
-        notifyURL(sensorReport, 1);
+        
+
+        // pump sensor error
+        if(normalPump==invertPump)
+        {
+          // if error in pump sensor, switch to backup mechanism
+          sensorReport = sensorReport + "\n\r";
+          sensorReport = "Pump sensor error.Switching to backup mechanism";
+          notifyURL(sensorReport, 1);
+          
+          forcePumpOn = true;
+        }
+        else
+        {
+          health = 0;
+          
+          // if error in any other sensor then halt
+          notifyURL(sensorReport, 1);
+          
+          beeperOn();
+          systemLedOn();
+        }
       }
     }
   }
@@ -885,31 +904,36 @@ void readEnclosureTemperature()
  **/
 void evaluateAlarms()
 {
-  if(dt.hour >= 5 && dt.hour <= 12)
+  // between 5 am and 12 pm or between 5 pm and 7 pm -> pump runs 
+  if((dt.hour >= 5 && dt.hour <= 12) || ((dt.hour >= 16 && dt.minute >= 30) && dt.hour <= 19))
   {
-    // between 5 am and 12 pm -> morning pump runs 
-    PUMP_EVENT = true; 
-  } 
-  else if(dt.hour >= 17 && dt.hour <= 19) 
-  {
-    // between 5 pm and 7 pm -> evening pump run evenbt 
-    PUMP_EVENT = true;
+    if(!PUMP_EVENT){
+      PUMP_EVENT = true;
+      notifyURL("Pump alarm time on", 1);
+    }
   }
   else
   {
     // no alarms
-    PUMP_EVENT = false;
+    if(PUMP_EVENT){
+      PUMP_EVENT = false;
+      notifyURL("Pump alarm time off", 1);
+    }
   }
 
 
   // Sensor test at 2 pm
   if(dt.hour == 14 && dt.minute == 0 && dt.second == 0)
   {
-    SENSOR_TEST_EVENT = true;
+    if(!SENSOR_TEST_EVENT){
+      SENSOR_TEST_EVENT = true;
+    }
   }
   else
   {
-    SENSOR_TEST_EVENT = false;
+    if(SENSOR_TEST_EVENT){
+      SENSOR_TEST_EVENT = false;
+    }
   }
 
   // reset
@@ -1112,13 +1136,29 @@ void evaluateTankState()
       {
         pumpSensorOn();
       }
-      
   
       // read sensor data
       low = readSensor(SENSOR_4_DATA);
       mid = readSensor(SENSOR_3_DATA);
       high = readSensor(SENSOR_2_DATA);
-      pump = readSensor(SENSOR_1_DATA);
+
+      // special condition handling
+      if(forcePumpOn)
+      {
+        if(PUMP_EVENT)
+        {
+          pump = 1;
+        }
+        else
+        {
+          pump = 0;
+        }
+      }
+      else
+      {
+        pump = readSensor(SENSOR_1_DATA);
+      }
+      
     }
 
     if(debug){
