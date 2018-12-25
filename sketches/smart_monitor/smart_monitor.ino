@@ -20,7 +20,7 @@ int RTC_SDA_SENSOR_PIN = A4;
 int RTC_SCL_SENSOR_PIN = A5;
 
 
-int callibrationTime = 5; // seconds
+int callibrationTime = 35; // seconds
 
 boolean callibrationDone = false;
 
