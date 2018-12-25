@@ -923,8 +923,8 @@ void evaluateAlarms()
   }
 
 
-  // Sensor test at 2 pm
-  if(dt.hour == 14 && dt.minute == 0 && dt.second == 0)
+  // Sensor test at 3 pm and 3 am
+  if((dt.hour == 15 && dt.minute == 0 && dt.second == 0) || (dt.hour == 3 && dt.minute == 0 && dt.second == 0))
   {
     if(!SENSOR_TEST_EVENT){
       SENSOR_TEST_EVENT = true;
