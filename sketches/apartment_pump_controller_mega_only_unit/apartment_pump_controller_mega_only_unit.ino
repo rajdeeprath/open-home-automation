@@ -852,6 +852,7 @@ void doMiscTasks()
 void loop()
 {
   dt = clock.getDateTime();
+  //Serial.println("hour " + String(dt.hour) + " : minute " + String(dt.minute));
 
   readEnclosureTemperature();
 
@@ -905,7 +906,7 @@ void readEnclosureTemperature()
 void evaluateAlarms()
 {
   // between 5 am and 12 pm or between 5 pm and 7 pm -> pump runs 
-  if(((dt.hour == 5 && dt.minute >=30) && dt.hour <= 12) || (dt.hour >= 5 && dt.hour <= 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour <= 19) || (dt.hour >= 17 && dt.hour <= 19))
+  if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour >= 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
   {
     if(!PUMP_EVENT){
       PUMP_EVENT = true;
