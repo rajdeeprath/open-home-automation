@@ -20,7 +20,7 @@ int RTC_SDA_SENSOR_PIN = A4;
 int RTC_SCL_SENSOR_PIN = A5;
 
 
-int callibrationTime = 35; // seconds
+int callibrationTime = 30; // seconds
 
 boolean callibrationDone = false;
 
@@ -41,7 +41,7 @@ boolean lightAlarmActive = false;
 boolean PUMP_ALARM_ACTIVE = false;
 boolean pumpAlarmActive = false;
 
-long lastPirHigh = 0;
+
 long timeNow = 0;
 
 tmElements_t tm;
@@ -59,8 +59,10 @@ time_t pumpOn_t;
 tmElements_t pumpOffTime;
 time_t pumpOff_t;
 
+unsigned long lastPirHigh = 0;
+unsigned long currentMillis = 0;
 
-long CONDITION_TIMEOUT = 600; // seconds
+long CONDITION_TIMEOUT = 180000; // milliseconds
 int LIGHT_VAL_THRESHOLD = 700;
 
 boolean systemOk = false;
@@ -170,10 +172,6 @@ void loop() {
     callibrationDone = true;
     digitalWrite(LED_PIN, LOW);
   }
-
-  
-  // Delay
-  delay(1000);
   
 
   // Read light sensor value
@@ -190,11 +188,6 @@ void loop() {
 
   // Evaluate light data
   evaluateLightState(lightVal, LIGHTSTATE);
-
-
-  // check RTC - If not ok skip time related code execution
-  //rtcOk = !RTC.oscStopped();
-  //if(!rtcOk) return;
   
 
   // Calculate alarm times W.R.T today
@@ -211,6 +204,8 @@ void loop() {
      Check for PIR sensor + LIGHT sensor COMBO
    *******************************************/
 
+  currentMillis = millis();
+
   if (PIRSTATE == HIGH && LIGHTSTATE == LOW && LIGHT_ALARM_ACTIVE == false)
   {
     if (CONDITION == false && pirHistoryIndex >= MAX_RECORDS)
@@ -223,8 +218,10 @@ void loop() {
   {
     if (CONDITION == true)
     {
-      if (timeNow - lastPirHigh > CONDITION_TIMEOUT)
+      //Serial.println("currentMillis - lastPirHigh = " + String(currentMillis - lastPirHigh) + " | CONDITION_TIMEOUT = " + CONDITION_TIMEOUT);
+      if (currentMillis - lastPirHigh > CONDITION_TIMEOUT)
       {
+        lastPirHigh = currentMillis;
         CONDITION = false;
         digitalWrite(RELAY_PIN_1, LOW);
       }
@@ -274,6 +271,8 @@ void loop() {
       }
     }
   }
+
+  delay(500); // delay for spaces between data samples 
 }
 
 
@@ -298,7 +297,7 @@ void evaluateMotionState(int pirVal, int &PIRSTATE)
     if (pirHistoryIndex < MAX_RECORDS)
     {
       // record when pir state was high recently
-      lastPirHigh = now();
+      lastPirHigh = millis();
       pirHistoryIndex++;
     }
 
