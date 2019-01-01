@@ -126,6 +126,7 @@ struct Notification {
    char message[80] = "";
    long queue_time;
    long send_time;
+   int days_running;
    int error=0;
    int debug=0;
    char clocktime[100] = "";
@@ -177,11 +178,23 @@ int invertLow, invertMid, invertHigh, invertPump;
 
 int health = 1;
 boolean SENSOR_TEST_EVENT = false;
+boolean RESET_EVENT = false;
 int INSUFFICIENTWATER = 0;
 int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
 
-boolean forcePumpOn = false;
+boolean forcePumpOn = true;
+int daysRunning = 0;
+int MAX_DAYS_RUNNING = 3;
+int lastRunDay = 0;
+
+void(* resetFunc) (void) = 0;
+
+void doReset(){
+  daysRunning = 0;
+  RESET_EVENT = false;
+  resetFunc();
+}
 
 void setup()
 {
@@ -192,7 +205,6 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-
   /* RTC init */
 
   // Initialize DS3231
@@ -201,6 +213,9 @@ void setup()
 
   // Set sketch compiling time
   //clock.setDateTime(__DATE__, __TIME__);
+
+  dt = clock.getDateTime();
+  lastRunDay = dt.day;
 
   // give the hardware some time to initialize
   delay(minHardwareInitializeTime);  
@@ -825,7 +840,11 @@ void testSensors()
 void doMiscTasks()
 {
   currentTimeStamp = millis();
-  if(SENSOR_TEST_EVENT)
+  if(RESET_EVENT)
+  {
+    doReset();
+  }
+  else if(SENSOR_TEST_EVENT)
   {
     if(currentTimeStamp > 0)
     {
@@ -852,7 +871,6 @@ void doMiscTasks()
 void loop()
 {
   dt = clock.getDateTime();
-  //Serial.println("hour " + String(dt.hour) + " : minute " + String(dt.minute));
 
   readEnclosureTemperature();
 
@@ -867,6 +885,7 @@ void loop()
   }
   else
   {
+    runningDaysCounter();
     evaluateAlarms();
     if(health == 1)
     {
@@ -906,7 +925,7 @@ void readEnclosureTemperature()
 void evaluateAlarms()
 {
   // between 5 am and 12 pm or between 5 pm and 7 pm -> pump runs 
-  if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour >= 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
+  if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour > 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
   {
     if(!PUMP_EVENT){
       PUMP_EVENT = true;
@@ -938,16 +957,22 @@ void evaluateAlarms()
   }
 
   // reset
-  /*
-  if(dt.hour ==4 && dt.minute == 32 && dt.second == 0)
-  {
-    if(debug){   
-      systemPrint(String("rebooting"));
+  if(daysRunning >= MAX_DAYS_RUNNING){
+    if(!RESET_EVENT){
+      RESET_EVENT = true;
     }
   }
-  */
 }
 
+
+void runningDaysCounter()
+{
+  // if current day is not the last run day then increment counter
+  if(dt.day != lastRunDay){
+    lastRunDay = dt.day;
+    daysRunning = daysRunning + 1;
+  }
+}
 
 
 int readSensorAnalogToDigital(int pin)
@@ -1617,6 +1642,7 @@ void notifyURL(String message, int error, int debug)
   notice.echo = echo;
   notice.error = error;
   notice.debug = debug;
+  notice.days_running = daysRunning;
   strcpy(notice.clocktime,  clock.dateFormat("d-m-Y H:i:s", dt));
   
   enqueueNotification(notice);
@@ -1679,6 +1705,8 @@ String getPostNotificationString(Notification &notice)
       post+="debug="+String(notice.debug);
       post+="&";
       post+="time=" + String(notice.clocktime);
+      post+="&";
+      post+="days_running=" + String(notice.days_running);     
 
       return post;
 }
