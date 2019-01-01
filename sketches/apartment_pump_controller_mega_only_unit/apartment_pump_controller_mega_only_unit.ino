@@ -206,21 +206,20 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  /* RTC init */
+  // give the hardware some time to initialize
+  delay(minHardwareInitializeTime);  
+  systemPrint("Preparing to start");
 
   // Initialize DS3231
-  Serial.println("Initialize DS3231");;
+  systemPrint("Initialize DS3231");;
   clock.begin();
 
   // Set sketch compiling time
   //clock.setDateTime(__DATE__, __TIME__);
 
-  dt = clock.getDateTime();
+  // get time and set last run day as today
+  dt = clock.getDateTime();  
   lastRunDay = dt.day;
-
-  // give the hardware some time to initialize
-  delay(minHardwareInitializeTime);  
-  systemPrint("Preparing to start");
   
   // start the Ethernet connection using a fixed IP address and DNS server:
   Ethernet.begin(mac, ip);
@@ -1644,9 +1643,30 @@ void notifyURL(String message, int error, int debug)
   notice.error = error;
   notice.debug = debug;
   notice.days_running = daysRunning;
-  strcpy(notice.clocktime,  clock.dateFormat("d-m-Y H:i:s", dt));
+
+  String timenow = formatRTCTime(dt);
+  timenow.toCharArray(notice.clocktime, timenow.length()+1);
   
   enqueueNotification(notice);
+}
+
+
+String formatRTCTime(RTCDateTime t)
+{
+  String ft = "";
+  ft += String(t.day);
+  ft += "-";
+  ft += String(t.month);
+  ft += "-";
+  ft += String(t.year);
+  ft += " ";
+  ft += String(t.hour);
+  ft += ":";
+  ft += String(t.minute);
+  ft += ":";
+  ft += String(t.second);
+
+  return ft;
 }
 
 
