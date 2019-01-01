@@ -191,6 +191,7 @@ int lastRunDay = 0;
 void(* resetFunc) (void) = 0;
 
 void doReset(){
+  notifyURL("Resetting device", 1);
   daysRunning = 0;
   RESET_EVENT = false;
   resetFunc();
