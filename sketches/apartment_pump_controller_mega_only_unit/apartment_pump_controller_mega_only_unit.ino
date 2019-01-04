@@ -1,3 +1,4 @@
+#include <avr/wdt.h>
 #include <SPI.h>
 #include <Ethernet.h>
 #include <Wire.h>
@@ -188,13 +189,12 @@ int daysRunning = 0;
 int MAX_DAYS_RUNNING = 3;
 int lastRunDay = 0;
 
-void(* resetFunc) (void) = 0;
-
 void doReset(){
-  notifyURL("Resetting device", 1);
   daysRunning = 0;
-  RESET_EVENT = false;
-  resetFunc();
+  RESET_EVENT = false;  
+  delay(5000);
+  wdt_enable(WDTO_8S);
+  wdt_reset();
 }
 
 void setup()
@@ -206,9 +206,11 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
+  systemPrint("Preparing to start");
+
   // give the hardware some time to initialize
   delay(minHardwareInitializeTime);  
-  systemPrint("Preparing to start");
+  
 
   // Initialize DS3231
   systemPrint("Initialize DS3231");;
@@ -288,7 +290,6 @@ void setup()
 
   pinMode(BEEPER, OUTPUT);
   digitalWrite(BEEPER, LOW);
-
 
   /* Misc init */  
   initialReadTime = millis(); 
