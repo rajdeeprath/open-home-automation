@@ -5,21 +5,30 @@
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <RCSwitch.h>
+#include <math.h>
 
 #define ADC A0
 #define RF_TRANSMIT 4
 #define BELL_SENSOR_RELAY 12
-#define LED 5
+#define DETECT_LED 5
+#define NETWORK_LED 2
+
+IPAddress local_ip(192,168,5,1);
+IPAddress gateway(192,168,5,1);
+IPAddress subnet(255,255,255,0);
 
 const String NAME = "HMU-BL-002";
 String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Bell Sensor\",\"actions\":{\"getTimeout\":{\"method\":\"get\",\"path\":\"\/sensor\/1\/timeout\"},\"setTimeout\":{\"path\":\"\/sensor\/1\/timeout\/set\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"Between 15 and 60\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 // Debugging mode
 boolean debug = true;
-int RFCODE = 73964;
+const char AP_DEFAULT_PASS[10] = "iot@123!";
+const int RFCODE = 73964;
 
 int eeAddress = 0;
 int bell_input;
+float bell_input_voltage;
+const float BELL_INPUT_VOLTAGE_THRESHOLD = 2.0;
 boolean BELL_DETECTION_LOCK = false;
 boolean BELL_SENSOR_ON = false;
 boolean BELL_ON = false;
@@ -295,7 +304,7 @@ void setup()
   }
 
   // init led pin
-  pinMode(LED, OUTPUT);
+  pinMode(DETECT_LED, OUTPUT);
 
   // bell sensor -> Isolated Mode Power Supply Controlled through Relay
   pinMode(BELL_SENSOR_RELAY, OUTPUT);
@@ -304,7 +313,9 @@ void setup()
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
 
+  wifiManager.setAPStaticIPConfig(local_ip, gateway, subnet);
   wifiManager.autoConnect(APNAME, "iot@123!");
+
 
   //if you get here you have connected to the WiFi
   debugPrint("connected...yeey :)");
@@ -405,7 +416,7 @@ void enableBellSensor()
 void ledOn()
 {
   if(!LED_ON){
-    digitalWrite(LED, HIGH); 
+    digitalWrite(DETECT_LED, HIGH); 
     LED_ON = true;
   }
 }
@@ -414,7 +425,7 @@ void ledOn()
 void ledOff()
 {
   if(LED_ON){
-    digitalWrite(LED, LOW); 
+    digitalWrite(DETECT_LED, LOW); 
     LED_ON = false;
   }
 }
@@ -423,12 +434,15 @@ void ledOff()
 void checkBell()
 {
   bell_input = analogRead(ADC);
+  bell_input_voltage = getValueAsVoltage(bell_input);
   //bell_input = 910;
   //debugPrint("bell_input " + String(bell_input));
 
   // Check alarm state
   sinceLastDetection = millis() - lastDetection;
-  BELL_ON = (bell_input > BELL_INPUT_THRESHOLD);
+  
+  //BELL_ON = (bell_input > BELL_INPUT_THRESHOLD);
+  BELL_ON = (bell_input_voltage > BELL_INPUT_VOLTAGE_THRESHOLD);
   BELL_TIMEOUT_BREACHED = (sinceLastDetection > BELL_TIMEOUT);
   canNotify = (BELL_TIMEOUT_BREACHED && BELL_ON);
 
@@ -476,6 +490,14 @@ void checkBell()
 }
 
 
+float getValueAsVoltage(int val)
+{
+  float voltage = val * (3.3 / 1024.0);
+  voltage = round( voltage * 10.0 ) / 10.0;
+  return voltage;
+}
+
+
 void testNotify()
 {
   debugPrint("Testing notification");
@@ -495,6 +517,7 @@ void testNotify()
           notifyURL();
         }
       }
+    }
   }
 }
 
