@@ -24,7 +24,7 @@ String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Bell S
 boolean debug = true;
 const char AP_DEFAULT_PASS[10] = "iot@123!";
 const int RFCODE = 73964;
-
+const int EEPROM_LIMIT = 512;
 int eeAddress = 0;
 int bell_input;
 float bell_input_voltage;
@@ -291,10 +291,10 @@ void setNotify()
 
 void setup()
 {
-  Serial.begin(57600);
+  Serial.begin(9600);
   
   // start eeprom
-  EEPROM.begin(512);
+  EEPROM.begin(EEPROM_LIMIT);
 
   // Check for reset and do reset routine
   readSettings();
@@ -685,7 +685,7 @@ void eraseSettings()
 {
   debugPrint("Erasing eeprom...");
   
-  for (int i = 0; i < 512; i++)
+  for (int i = 0; i < EEPROM_LIMIT; i++)
     EEPROM.write(i, 0);
 }
 
