@@ -11,7 +11,7 @@
 #define RF_TRANSMIT 4
 #define BELL_SENSOR_RELAY 12
 #define DETECT_LED 5
-#define NETWORK_LED 2
+#define NETWORK_LED 14
 
 IPAddress local_ip(192,168,5,1);
 IPAddress gateway(192,168,5,1);
