@@ -1,7 +1,7 @@
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
+#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <RCSwitch.h>
@@ -11,11 +11,12 @@
 #define BELL_SENSOR_RELAY 12
 #define LED 5
 
-const String NAME = "HMU-BL-001";
+const String NAME = "HMU-BL-002";
 String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Bell Sensor\",\"actions\":{\"getTimeout\":{\"method\":\"get\",\"path\":\"\/sensor\/1\/timeout\"},\"setTimeout\":{\"path\":\"\/sensor\/1\/timeout\/set\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"Between 15 and 60\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 // Debugging mode
-boolean debug = false;
+boolean debug = true;
+int RFCODE = 73964;
 
 int eeAddress = 0;
 int bell_input;
@@ -281,7 +282,7 @@ void setNotify()
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(57600);
   
   // start eeprom
   EEPROM.begin(512);
@@ -315,6 +316,7 @@ void setup()
 
   server->on("/notify", getNotify);
   server->on("/notify/set", setNotify);
+  server->on("/notify/test", testNotify);
 
   server->on("/notify/url", getBellNotifyURL);
   server->on("/notify/url/set", setBellNotifyURL);
@@ -335,7 +337,7 @@ void setup()
 
   // Transmitter is connected to Arduino Pin #D2 (04)
   mySwitch.enableTransmit(RF_TRANSMIT);
-  mySwitch.setRepeatTransmit(5);
+  mySwitch.setRepeatTransmit(6);
 }
 
 void loop() {
@@ -474,11 +476,33 @@ void checkBell()
 }
 
 
+void testNotify()
+{
+  debugPrint("Testing notification");
+  
+  if (canNotify)
+  {
+    if (conf.notify == 1)
+    {
+      // if RF notify is allowed then do it
+      if(conf.notify_mode == 1 || conf.notify_mode == 3){
+        notifyRF();
+      }
+
+      // if URL notify is allowed tdo it
+      if(conf.notify_mode == 2 || conf.notify_mode == 3){
+        if (conf.endpoint_length > 4 && conf.endpoint != "0.0.0.0") {
+          notifyURL();
+        }
+      }
+  }
+}
+
 
 void notifyRF()
 {
   debugPrint("Sending transmission");
-  mySwitch.send(1, 24);
+  mySwitch.send(RFCODE, 24);
 }
 
 
