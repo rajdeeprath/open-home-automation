@@ -39,6 +39,7 @@ boolean canNotify = false;
 long lastDetection;
 long sinceLastDetection;
 boolean LED_ON;
+boolean NET_LED_ON;
 String IP;
 boolean inited;
 
@@ -305,20 +306,23 @@ void setup()
 
   // init led pin
   pinMode(DETECT_LED, OUTPUT);
+  pinMode(NETWORK_LED, OUTPUT);
 
   // bell sensor -> Isolated Mode Power Supply Controlled through Relay
   pinMode(BELL_SENSOR_RELAY, OUTPUT);
   //enableBellSensor();
 
+  netledOn();
+
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
 
   wifiManager.setAPStaticIPConfig(local_ip, gateway, subnet);
-  wifiManager.autoConnect(APNAME, "iot@123!");
-
+  wifiManager.autoConnect(APNAME, AP_DEFAULT_PASS);
 
   //if you get here you have connected to the WiFi
   debugPrint("connected...yeey :)");
+  netledOff();
 
   server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
 
@@ -430,6 +434,22 @@ void ledOff()
   }
 }
 
+void netledOn()
+{
+  if(!NET_LED_ON){
+    digitalWrite(NETWORK_LED, HIGH); 
+    NET_LED_ON = true;
+  }
+}
+
+
+void netledOff()
+{
+  if(NET_LED_ON){
+    digitalWrite(NETWORK_LED, LOW); 
+    NET_LED_ON = false;
+  }
+}
 
 void checkBell()
 {
