@@ -6,6 +6,7 @@
 #include <QueueArray.h>
 #include <dht.h>
 #include <utility/w5100.h>
+#include <ArduinoLog.h>
 
 #define SENSOR_1_POWER 29
 #define SENSOR_1_LEVEL 31
@@ -39,6 +40,7 @@
 
 // secondary temperature monitor
 #define TEMPERATURE_SECONDARY A8
+#define RESET_TRIGGER 7
 
 const String NAME="AMU-PC-001";
 
@@ -50,6 +52,7 @@ String data;
 boolean PUMP_EVENT = false;
 boolean POWER_SAVER = false;
 boolean MAINTAINENCE_MODE = false;
+boolean SOFTRESET = true;
 
 long last_notify = 0;
 long lastBeepStateChange;
@@ -193,8 +196,15 @@ void doReset(){
   daysRunning = 0;
   RESET_EVENT = false;  
   delay(5000);
-  wdt_enable(WDTO_8S);
-  wdt_reset();
+  if(SOFTRESET)
+  {
+    wdt_enable(WDTO_8S);
+    wdt_reset();
+  }
+  else
+  {
+    digitalWrite(RESET_TRIGGER, LOW);
+  }
 }
 
 void setup()
@@ -206,14 +216,15 @@ void setup()
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-  systemPrint("Preparing to start");
+  Log.begin(LOG_LEVEL_NOTICE, &Serial);
+  
+  Log.notice("Preparing to start" CR);
 
   // give the hardware some time to initialize
   delay(minHardwareInitializeTime);  
-  
 
   // Initialize DS3231
-  systemPrint("Initialize DS3231");;
+  Log.notice("Initialize DS3231" CR);
   clock.begin();
 
   // Set sketch compiling time
@@ -227,8 +238,7 @@ void setup()
   Ethernet.begin(mac, ip);
   
   // print the Ethernet board/shield's IP address:
-  Serial.print("My IP address: ");
-  Serial.println(Ethernet.localIP());
+  Log.notice("My IP address: : %d.%d.%d.%d" CR, Ethernet.localIP()[0],  Ethernet.localIP()[1], Ethernet.localIP()[2], Ethernet.localIP()[3]);
 
 
   /* Pins init */
@@ -291,6 +301,9 @@ void setup()
   pinMode(BEEPER, OUTPUT);
   digitalWrite(BEEPER, LOW);
 
+  /* Reset trigger pin */
+  pinMode(RESET_TRIGGER, INPUT_PULLUP);
+
   /* Misc init */  
   initialReadTime = millis(); 
 }
@@ -306,6 +319,7 @@ void allIndicatorsOn()
   pumpLedOn();
   systemLedOn();
   blinkAlarm();
+  //beeperOn();
 }
 
 
@@ -640,16 +654,14 @@ void initSensors()
   // read pump sensor
   tankState.pump = readSensor(SENSOR_1_DATA);
 
-  if(debug){
-    systemPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
-  }
+  Log.trace("Sensors : %d | %d | %d | %d" CR, tankState.pump, tankState.high, tankState.mid, tankState.low);
   
   // initial read time
   
   if(millis() - initialReadTime > minInitialSensorReadTime)
   {
       inited = true;
-      systemPrint("inited");
+      Log.notice("Inited : " CR);
       systemLedOff();
 
       String message = buildWaterLevelMessage(tankState);
@@ -695,8 +707,8 @@ void doSensorTest()
   sensorCheck = true;
   sensorTestTime = millis();
   sensorsInvert = false;
-
-  systemPrint("Starting sensor test");
+  
+  Log.notice("Starting sensor test" CR);
 
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -712,7 +724,7 @@ void invertSensorLevels()
   sensorTestTime = millis();
   sensorsInvert = true;
 
-  systemPrint("Sensor levels inverted");
+  Log.notice("Sensor levels inverted" CR);
       
   digitalWrite(SENSOR_1_LEVEL, LOW); // level
   digitalWrite(SENSOR_2_LEVEL, LOW); // level
@@ -730,7 +742,7 @@ void cancelSensorTest()
   sensorTestTime = millis();
   sensorsInvert = false;
 
-  systemPrint("Stopping sensor test");
+  Log.notice("Stopping sensor test" CR);
   
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -744,7 +756,7 @@ void testSensors()
 {
   if(!sensorsInvert)
   {
-    systemPrint("Checking normal sensor states");
+    Log.notice("Checking normal sensor states" CR);
     
     // read bottom sensor
     normalLow = readSensor(SENSOR_4_DATA);
@@ -758,9 +770,7 @@ void testSensors()
     // read pump sensor
     normalPump = readSensor(SENSOR_1_DATA);
 
-    //if(debug){
-      systemPrint(String(normalPump) + "|" + String(normalHigh) + "|" + String(normalMid) + "|" + String(normalLow));
-    //}
+    Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
 
     // change condition after minSensorTestReadtime seconds
     if(millis() - sensorTestTime > minSensorTestReadtime){ 
@@ -769,7 +779,7 @@ void testSensors()
   }
   else 
   {
-    systemPrint("Checking invert sensor states");
+    Log.notice("Checking invert sensor states" CR);
     
     // read bottom sensor
     invertLow = readSensor(SENSOR_4_DATA);
@@ -783,9 +793,7 @@ void testSensors()
     // read pump sensor
     invertPump = readSensor(SENSOR_1_DATA);
 
-    //if(debug){
-      systemPrint(String(invertPump) + "|" + String(invertHigh) + "|" + String(invertMid) + "|" + String(invertLow));
-    //}
+    Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
     
     // change condition after minSensorTestReadtime seconds
     
@@ -925,7 +933,7 @@ void readEnclosureTemperature()
  **/
 void evaluateAlarms()
 {
-  // between 5 am and 12 pm or between 5 pm and 7 pm -> pump runs 
+  // between 5 am and 1 pm or between 5 pm and 7 pm -> pump runs 
   if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour > 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
   {
     if(!PUMP_EVENT){
@@ -980,7 +988,6 @@ int readSensorAnalogToDigital(int pin)
 {
   int val = analogRead(pin);
   float volts = val * (5.0 / 1023.0);
- // systemPrint(String(volts));
 
   return (volts >= 4)?1:0;
 }
@@ -1188,10 +1195,8 @@ void evaluateTankState()
       
     }
 
-    if(debug){
-      systemPrint("=======================================================================");
-      systemPrint(String(pump) + "|" + String(high) + "|" + String(mid) + "|" + String(low));
-    }
+    Log.trace("=======================================================================" CR);
+    Log.trace("Sensors : %d | %d | %d | %d" CR, pump, high, mid, low);
   
     // detect change
     trackSensorChanges(low, mid, high, pump);   
@@ -1326,11 +1331,9 @@ void evaluateTankState()
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
   
     /***************************/ 
-    if(debug){   
-      systemPrint(String(tankState.pump) + "|" + String(tankState.high) + "|" + String(tankState.mid) + "|" + String(tankState.low));
-      systemPrint("=======================================================================");
-      systemPrint("state changed = " + String(stateChanged));
-    }
+    Log.trace("Sensors : %d | %d | %d | %d" CR, tankState.pump, tankState.high, tankState.mid, tankState.low);
+    Log.trace("=======================================================================" CR);
+    Log.trace("State changed = %T" CR, stateChanged);
 
 
     // evaluate and dispatch message
@@ -1594,7 +1597,7 @@ void trackOverFlow(int pump, int high)
   // track overflow
   if(pump == 1 && high == 1)
   {
-    systemPrint("Overflow condition");    
+    Log.trace("Overflow condition" CR);  
     
     if(lastOverflowCondition == 0)
     {
@@ -1628,7 +1631,7 @@ void notifyURL(String message, int error)
 
 void notifyURL(String message, int error, int debug)
 {
-  systemPrint("Preparing notification");
+  Log.trace("Preparing notification" CR);
   
   Notification notice = {};
   notice.low = tankState.low;
@@ -1677,21 +1680,10 @@ void enqueueNotification(struct Notification notice)
    notice.queue_time = millis();
 
    if(queue.count() < NOTICE_LIMIT){
-    //systemPrint("Pushing notification to queue");
+    Log.trace("Pushing notification to queue" CR);
     queue.enqueue(notice);
    }
 }
-
-
-
-
-/**
- * Prints message to serial
- */
-void systemPrint(String message){
-    Serial.println(message);
-}
-
 
 
 /**
@@ -1746,18 +1738,15 @@ void dispatchPendingNotification()
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
       if(debug){
-        systemPrint("Running Notification service");
+        Log.notice("Running Notification service" CR);
       }
         
       posting = true;
        
       if (client.connect("iot.flashvisions.com",80)) 
       {
-        systemPrint("connected to server");
-
-        if(debug){
-          systemPrint("Popping notification from queue. Current size = " + String( queue.count()));
-        }
+        Log.notice("Connected to server" CR);
+        Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
 
         Notification notice = queue.dequeue();
         notice.send_time = millis();
@@ -1776,7 +1765,7 @@ void dispatchPendingNotification()
       }
 
       if (client.connected()){
-        systemPrint("disconnecting.");
+        Log.notice("Disconnecting" CR);
         client.stop();
       }
       
@@ -1785,4 +1774,3 @@ void dispatchPendingNotification()
     }
   } 
 }
-
