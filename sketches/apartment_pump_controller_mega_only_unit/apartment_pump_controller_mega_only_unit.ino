@@ -193,6 +193,7 @@ int MAX_DAYS_RUNNING = 3;
 int lastRunDay = 0;
 
 void doReset(){
+  /*
   daysRunning = 0;
   RESET_EVENT = false;  
   delay(5000);
@@ -205,6 +206,7 @@ void doReset(){
   {
     digitalWrite(RESET_TRIGGER, LOW);
   }
+  */
 }
 
 void setup()
@@ -1210,6 +1212,11 @@ void evaluateTankState()
         if(pump == 1)
         {
           subMessage = "Water Level risen to 10% ";
+        }
+        else if(forcePumpOn)
+        {
+          subMessage = "Water Level risen to 10% (Emergency pump run)";
+          PUMP_EVENT = true;
         }
         else
         {
