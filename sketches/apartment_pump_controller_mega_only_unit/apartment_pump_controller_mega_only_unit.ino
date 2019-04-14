@@ -50,6 +50,7 @@ RTCDateTime dt;
 String data;
 
 boolean PUMP_EVENT = false;
+boolean EMERGENCY_PUMP_EVENT = false;
 boolean POWER_SAVER = false;
 boolean MAINTAINENCE_MODE = false;
 boolean SOFTRESET = true;
@@ -938,6 +939,18 @@ void evaluateAlarms()
   // between 5 am and 1 pm or between 5 pm and 7 pm -> pump runs 
   if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour > 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
   {
+    // turn off emergency flag
+    if(EMERGENCY_PUMP_EVENT){
+      EMERGENCY_PUMP_EVENT = false;
+    }
+    
+    if(!PUMP_EVENT){
+      PUMP_EVENT = true;
+      notifyURL("Pump alarm time on", 1);
+    }
+  }
+  else if(EMERGENCY_PUMP_EVENT)
+  {
     if(!PUMP_EVENT){
       PUMP_EVENT = true;
       notifyURL("Pump alarm time on", 1);
@@ -945,10 +958,13 @@ void evaluateAlarms()
   }
   else
   {
-    // no alarms
-    if(PUMP_EVENT){
-      PUMP_EVENT = false;
-      notifyURL("Pump alarm time off", 1);
+    // if emergency flag not on
+    if(!EMERGENCY_PUMP_EVENT){
+      // no alarms
+      if(PUMP_EVENT){
+        PUMP_EVENT = false;
+        notifyURL("Pump alarm time off", 1);
+      }
     }
   }
 
@@ -1216,7 +1232,7 @@ void evaluateTankState()
         else if(forcePumpOn)
         {
           subMessage = "Water Level risen to 10% (Emergency pump run)";
-          PUMP_EVENT = true;
+          EMERGENCY_PUMP_EVENT = true;
         }
         else
         {
