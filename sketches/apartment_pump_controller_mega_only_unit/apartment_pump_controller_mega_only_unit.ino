@@ -953,7 +953,7 @@ void evaluateAlarms()
   {
     if(!PUMP_EVENT){
       PUMP_EVENT = true;
-      notifyURL("Pump alarm time on", 1);
+      notifyURL("Pump alarm time on (emergency)", 1);
     }
   }
   else
