@@ -799,7 +799,7 @@ void testSensors()
     Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
     
     // change condition after minSensorTestReadtime seconds
-    
+
     if(millis() - sensorTestTime > minSensorTestReadtime)
     {
       // cancel test
@@ -1760,9 +1760,7 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      if(debug){
-        Log.notice("Running Notification service" CR);
-      }
+      Log.trace("Running Notification service" CR);
         
       posting = true;
        
