@@ -6,6 +6,7 @@
 #include <ESP8266HTTPClient.h>
 #include <RCSwitch.h>
 #include <math.h>
+#include <ArduinoLog.h>
 
 #define ADC A0
 #define RF_TRANSMIT 4
@@ -49,6 +50,7 @@ RCSwitch mySwitch = RCSwitch();
 struct Settings {
   int notify = 1;
   long timestamp;
+  int starting = 0;
   int endpoint_length;
   int notify_mode;
   int reset = 0;
@@ -293,14 +295,23 @@ void setNotify()
 void setup()
 {
   Serial.begin(9600);
+
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+  Log.begin(LOG_LEVEL_NOTICE, &Serial);
   
   // start eeprom
   EEPROM.begin(EEPROM_LIMIT);
 
   // Check for reset and do reset routine
   readSettings();
+
+  preStartUp();
+  
   if(conf.reset == 1){
-    debugPrint("Reset flag detected!");    
+    Log.notice("Reset flag detected!" CR);    
     doReset();
   }
 
@@ -321,7 +332,7 @@ void setup()
   wifiManager.autoConnect(APNAME, AP_DEFAULT_PASS);
 
   //if you get here you have connected to the WiFi
-  debugPrint("connected...yeey :)");
+  Log.notice("connected...yeey :" CR);
   netledOff();
 
   server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
@@ -345,11 +356,11 @@ void setup()
   server->onNotFound(handleNotFound);
   server->begin();
 
-  debugPrint("HTTP server started");
+  Log.notice("HTTP server started" CR);
 
   IP = String(WiFi.localIP());
-  debugPrint(String(WiFi.localIP()));
-
+  Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+  
   // Transmitter is connected to Arduino Pin #D2 (04)
   mySwitch.enableTransmit(RF_TRANSMIT);
   mySwitch.setRepeatTransmit(6);
@@ -360,6 +371,9 @@ void loop() {
   if(!inited){
       inited = true;
       initSettings();
+      
+      // wait a little
+      delay(3000);
   }
 
   if (conf.reset == 1)
@@ -377,8 +391,33 @@ void loop() {
 }
 
 
+void preStartUp()
+{
+  delay(1000);
+  
+  conf.starting += 1;
+  Log.notice("starting count %d" CR, conf.starting);
+  
+  if(conf.starting >= 3)
+  {
+    // Check if we have restarted 3 times recently
+    conf.reset = 1;
+  }
+  else
+  {
+    // less than 3 then just save and continue
+    writeSettings();
+  }
+}
+
+
 void doReset()
 {
+  netledOn();
+  ledOn();
+
+  delay(3000);
+  
   conf.notify = 0;
   conf.timestamp = 0;
   conf.endpoint_length = 0;
@@ -390,12 +429,15 @@ void doReset()
   delay(1000);
   wifiManager.resetSettings();
   delay(1000);
+
+  netledOff();
+  ledOff();
 }
 
 
 void disableBellSensor()
 {
-  debugPrint("Disabling bell sensor");
+  Log.notice("Disabling bell sensor" CR);
 
   if (BELL_SENSOR_ON) {
     digitalWrite(BELL_SENSOR_RELAY, LOW);
@@ -407,7 +449,7 @@ void disableBellSensor()
 
 void enableBellSensor()
 {
-  debugPrint("Enabling bell sensor");
+  Log.notice("Enabling bell sensor" CR);
 
   if (!BELL_SENSOR_ON) {
     digitalWrite(BELL_SENSOR_RELAY, HIGH);
@@ -469,7 +511,7 @@ void checkBell()
 
   // if 'bell lock timeout' occurred then open bell detection lock
   if (BELL_TIMEOUT_BREACHED && BELL_DETECTION_LOCK) {
-    debugPrint("Removing bell detection lock");
+    Log.notice("Removing bell detection lock" CR);
     BELL_DETECTION_LOCK = false;
     enableBellSensor();
     ledOff();
@@ -479,7 +521,7 @@ void checkBell()
   // if 'canNotify' and 'bell detection lock' is open do detection action now
   if (canNotify && !BELL_DETECTION_LOCK)
   {
-    debugPrint("Bell on event detected!");
+    Log.notice("Bell on event detected!" CR);
     lastDetection = millis();
 
     // protect bell sensor from maniacs! => TURN ON BELL DETECTION LOCK
@@ -520,7 +562,7 @@ float getValueAsVoltage(int val)
 
 void testNotify()
 {
-  debugPrint("Testing notification");
+  Log.notice("Testing notification!" CR);
   
   if (canNotify)
   {
@@ -544,7 +586,7 @@ void testNotify()
 
 void notifyRF()
 {
-  debugPrint("Sending transmission");
+  Log.notice("Sending transmission!" CR);
   mySwitch.send(RFCODE, 24);
 }
 
@@ -556,17 +598,16 @@ void notifyURL()
     readSettings();
 
     posting = true;
-    debugPrint("Sending url call");
+    Log.notice("Sending url call!" CR);
 
     http.begin(String(conf.endpoint));
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
     int httpCode = http.POST("bell=" + String(BELL_DETECTION_LOCK));
-
     String payload = http.getString();
 
-    debugPrint(String(httpCode));
-    debugPrint(String(payload));
+    Log.trace("httpCode: : %d" CR, httpCode);
+    //Log.trace("payload %s:" CR, payload);
 
     http.end();
 
@@ -581,7 +622,7 @@ void initSettings()
   
   if (conf.notify_mode<1 || conf.notify_mode>3) 
   {
-    debugPrint("Setting defaults");
+    Log.trace("Setting defaults" CR);
     
     String url = "0.0.0.0";
     char tmp[url.length() + 1];
@@ -594,10 +635,13 @@ void initSettings()
     conf.notify = 0;
     conf.notify_mode = 3;
     conf.bell_timeout = 35;
+    conf.starting = 0;
     
-    writeSettings();
+    //writeSettings();
   }
 
+  // reset starting flag
+  conf.starting = 0;
 
   // update bell sensor timeout
   updateBellSensorTimeout();
@@ -606,6 +650,11 @@ void initSettings()
   lastDetection = millis() ;
   disableBellSensor();
   BELL_DETECTION_LOCK = true;
+
+  // save settings
+  writeSettings();
+
+  // Detection Led on
   ledOn();
 }
 
@@ -617,7 +666,7 @@ void updateBellSensorTimeout()
     BELL_TIMEOUT = conf.bell_timeout * 1000;
   }
 
-  debugPrint("BELL_TIMEOUT : " + String(BELL_TIMEOUT));
+  Log.notice("BELL_TIMEOUT : %d" CR, BELL_TIMEOUT);
 }
 
 
@@ -629,6 +678,8 @@ void writeSettings()
   EEPROM.write(eeAddress, conf.notify);
   eeAddress++;
   EEPROM.write(eeAddress, conf.timestamp);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.starting);
   eeAddress++;
   EEPROM.write(eeAddress, conf.endpoint_length);
   eeAddress++;
@@ -643,12 +694,12 @@ void writeSettings()
 
   EEPROM.commit();
 
-  debugPrint("Conf saved");
-  debugPrint(String(conf.notify));
-  debugPrint(String(conf.endpoint_length));
-  debugPrint(String(conf.notify_mode));
-  debugPrint(String(conf.bell_timeout));
-  debugPrint(String(conf.endpoint));
+  Log.notice("Conf saved" CR);
+  //debugPrint(String(conf.notify));
+  //debugPrint(String(conf.endpoint_length));
+  //debugPrint(String(conf.notify_mode));
+  //debugPrint(String(conf.bell_timeout));
+  //debugPrint(String(conf.endpoint));
 }
 
 
@@ -671,6 +722,8 @@ void readSettings()
   eeAddress++;
   conf.timestamp = EEPROM.read(eeAddress);
   eeAddress++;
+  conf.starting = EEPROM.read(eeAddress);
+  eeAddress++;
   conf.endpoint_length = EEPROM.read(eeAddress);
   eeAddress++;
   conf.notify_mode = EEPROM.read(eeAddress);
@@ -682,12 +735,12 @@ void readSettings()
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
-  debugPrint("Conf read");
-  debugPrint(String(conf.notify));
-  debugPrint(String(conf.endpoint_length));
-  debugPrint(String(conf.notify_mode));
-  debugPrint(String(conf.bell_timeout));
-  debugPrint(String(conf.endpoint));
+  Log.notice("Conf read" CR);
+  //debugPrint(String(conf.notify));
+  //debugPrint(String(conf.endpoint_length));
+  //debugPrint(String(conf.notify_mode));
+  //debugPrint(String(conf.bell_timeout));
+  //debugPrint(String(conf.endpoint));
 }
 
 
@@ -703,17 +756,8 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
 
 void eraseSettings()
 {
-  debugPrint("Erasing eeprom...");
+  Log.notice("Erasing eeprom" CR);
   
   for (int i = 0; i < EEPROM_LIMIT; i++)
     EEPROM.write(i, 0);
-}
-
-
-
-
-void debugPrint(String message) {
-  if (debug) {
-    Serial.println(message);
-  }
 }
