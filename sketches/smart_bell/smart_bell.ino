@@ -1,9 +1,10 @@
-#include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
+#include <WiFiManager.h>
 #include <EEPROM.h>
-#include <ESP8266HTTPClient.h>
 #include <RCSwitch.h>
 #include <math.h>
 #include <ArduinoLog.h>
@@ -18,23 +19,29 @@ IPAddress local_ip(192,168,5,1);
 IPAddress gateway(192,168,5,1);
 IPAddress subnet(255,255,255,0);
 
-const String NAME = "HMU-BL-002";
-String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Bell Sensor\",\"actions\":{\"getTimeout\":{\"method\":\"get\",\"path\":\"\/sensor\/1\/timeout\"},\"setTimeout\":{\"path\":\"\/sensor\/1\/timeout\/set\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"Between 15 and 60\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String ID = "";
+String capabilities = "{\"name\":\"%s\",\"devices\":{\"name\":\"Bell Sensor\",\"actions\":{\"getTimeout\":{\"method\":\"get\",\"path\":\"\/sensor\/1\/timeout\"},\"setTimeout\":{\"path\":\"\/sensor\/1\/timeout\/set\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"Between 15 and 60\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"getBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\"},\"setBellNotifyMode\":{\"method\":\"get\",\"path\":\"\/notify\/mode\/set\",\"params\":[{\"name\":\"mode\",\"type\":\"Number\",\"values\":\"1|2|3\",\"comment\":\"1 implies RF only | 2 implies Wifi only | 3 imples RF and Wifi transmission\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+
+const char TYPE_CODE[10] = "SM-BL"; // Code for Smart Bell
+const char UPDATE_SKETCH[7] = "sketch";
+const char UPDATE_SPIFFS[7] = "spiffs";
+const char UPDATE_ENDPOINT[40] = "https://iot.flashvisions.com/update";
+const char INIT_ENDPOINT[40] = "https://iot.flashvisions.com/initialize";
+const char AP_DEFAULT_PASS[10] = "iot@123!";
+const float BELL_INPUT_VOLTAGE_THRESHOLD = 2.0;
+const int RFCODE = 73964;
+const int EEPROM_LIMIT = 512;
+const int BELL_INPUT_THRESHOLD = 900;
 
 // Debugging mode
 boolean debug = true;
-const char AP_DEFAULT_PASS[10] = "iot@123!";
-const int RFCODE = 73964;
-const int EEPROM_LIMIT = 512;
 int eeAddress = 0;
 int bell_input;
 float bell_input_voltage;
-const float BELL_INPUT_VOLTAGE_THRESHOLD = 2.0;
 boolean BELL_DETECTION_LOCK = false;
 boolean BELL_SENSOR_ON = false;
 boolean BELL_ON = false;
 boolean BELL_TIMEOUT_BREACHED = false;
-int BELL_INPUT_THRESHOLD = 900;
 long BELL_TIMEOUT = 35000;
 boolean canNotify = false;
 long lastDetection;
@@ -65,6 +72,41 @@ std::unique_ptr<ESP8266WebServer> server;
 
 HTTPClient http;
 boolean posting;
+
+
+
+String generateClientID()
+{
+  byte mac[6]; 
+  WiFi.macAddress(mac);
+  String chipId = String(ESP.getChipId(), HEX);
+  String flashChipId = String(ESP.getFlashChipId(), HEX);
+
+  return String(TYPE_CODE) + "-" + String(mac[0], HEX) + chipId + String(mac[1], HEX) + "-" + String(mac[2], HEX) + flashChipId + String(mac[3], HEX) + "-" + String(mac[4], HEX) + String(mac[5], HEX);
+}
+
+
+String generateAPName()
+{
+  char ran[8]; 
+  gen_random(ran, 8);
+  
+  return String(TYPE_CODE) + "-" + String(ran);
+}
+
+
+void gen_random(char *s, const int len) {
+    static const char alphanum[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+
+    for (int i = 0; i < len; ++i) {
+        s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
+    }
+
+    s[len] = 0;
+}
 
 /**************************************************/
 
@@ -305,6 +347,9 @@ void setup()
   // start eeprom
   EEPROM.begin(EEPROM_LIMIT);
 
+  // Get ID
+  ID = generateClientID();
+
   // Check for reset and do reset routine
   readSettings();
 
@@ -325,6 +370,7 @@ void setup()
 
   netledOn();
 
+  String NAME = generateAPName();
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
 
