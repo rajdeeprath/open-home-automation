@@ -8,13 +8,18 @@
 #include <math.h>
 #include <ArduinoLog.h>
 #include <ArduinoJson.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 
 IPAddress local_ip(192,168,5,1);
 IPAddress gateway(192,168,5,1);
 IPAddress subnet(255,255,255,0);
 
-String ID = "";
+#define SKETCH_VERSION "001"
+#define SPIFFS_VERSION "001"
+
+String ID;
 const char TYPE_CODE[10] = "SM-BL"; // Code for Smart Bell
 const char UPDATE_SKETCH[7] = "sketch";
 const char UPDATE_SPIFFS[7] = "spiffs";
@@ -22,8 +27,8 @@ char* UPDATE_ENDPOINT = "https://iot.flashvisions.com/api/public/update";
 char* INIT_ENDPOINT = "https://iot.flashvisions.com/api/public/initialize";
 const char AP_DEFAULT_PASS[10] = "iot@123!";
 const int EEPROM_LIMIT = 512;
-const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";
-
+const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";// iot.flashvisions.com
+const long utcOffsetInSeconds = 19800; // INDIA
 
 // Debugging mode
 boolean debug = true;
@@ -32,14 +37,17 @@ String IP;
 boolean inited;
 
 WiFiManager wifiManager;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
+
 
 struct Settings {
-  long timestamp;
-  int starting = 0;
+  int valid = 1;
+  int mqtt_port = 0;  
   int mqtt_server_length = 0;
-  int mqtt_port = 0;
+  char mqtt_server[50] = "0.0.0.0";
+  long timestamp = 0;
   int reset = 0;
-  char mqtt_server[50] = "";
 };
 
 
@@ -59,7 +67,9 @@ void loadConfiguration()
   HTTPClient https;
   boolean failed = true;
 
-  http.begin("https://iot.flashvisions.com/api/public/initialize", fingerprint);
+  String url = String(INIT_ENDPOINT) + "?id=" + String(ID) + "&ver=" + String(SKETCH_VERSION);
+
+  http.begin(url, fingerprint);
   int httpCode = http.GET();
   
   if (httpCode == 200) 
@@ -77,13 +87,14 @@ void loadConfiguration()
       if(code == 200)
       {
           String mqtt_host = root["data"]["mqtt_host"];
-          conf.mqtt_port = root["data"]["mqtt_port"];
-          conf.timestamp = root["data"]["timestamp"];
-
           conf.mqtt_server[mqtt_host.length() + 1];
           mqtt_host.toCharArray(conf.mqtt_server, mqtt_host.length() + 1);
 
+          conf.mqtt_port = root["data"]["mqtt_port"];
+          conf.timestamp = root["data"]["timestamp"];
+
           conf.mqtt_server_length = sizeof(conf.mqtt_server);
+          conf.valid = 1;
 
           failed = false;
       }      
@@ -99,7 +110,8 @@ void loadConfiguration()
   }
   else
   {
-    Log.notice("Failed to load config. Trying after sometime" CR); 
+    Log.notice("Failed to load config. Trying after sometime" CR);
+    conf.valid = 0; 
     delay(5000);
   }
 }
@@ -141,7 +153,7 @@ void gen_random(char *s, const int len) {
 
 
 void setup()
-{
+{  
   Serial.begin(9600);
 
   while (!Serial) {
@@ -154,8 +166,7 @@ void setup()
   EEPROM.begin(EEPROM_LIMIT);
 
   // Check for reset and do reset routine
-  //readSettings();
-  preStartUp();
+  readSettings();
   
   if(conf.reset == 1){
     Log.notice("Reset flag detected!" CR);    
@@ -182,7 +193,12 @@ void loop() {
 
   if(!inited)
   {
-    loadConfiguration();
+    initSettings();
+  }
+  else
+  {
+    timeClient.update();
+    //Serial.println(timeClient.getFormattedTime());
   }
 
   if (conf.reset == 1)
@@ -190,12 +206,6 @@ void loop() {
     delay(5000);
     ESP.restart();
   }
-}
-
-
-void preStartUp()
-{
-  
 }
 
 
@@ -220,25 +230,60 @@ void initSettings()
   
   readSettings();
 
-  // reset starting flag
-  conf.starting = 0;
-
   loadConfiguration();
 
-  // save settings
-  //writeSettings();
-  inited = true;
+  if(conf.valid == 1)
+  {
+    inited = true;
+    timeClient.begin();
+  }  
+}
+
+
+
+bool updateFirmware(bool sketch=true)
+{
+    String msg;
+    t_httpUpdate_return ret;
+     
+    ESPhttpUpdate.rebootOnUpdate(false);
+    
+    if(sketch)
+    {
+      ret=ESPhttpUpdate.update(String(UPDATE_ENDPOINT),SKETCH_VERSION);
+    }
+    else 
+    {
+      ret=ESPhttpUpdate.updateSpiffs(String(UPDATE_ENDPOINT),SPIFFS_VERSION);
+    }
+    if(ret!=HTTP_UPDATE_NO_UPDATES)
+    {
+      if(ret==HTTP_UPDATE_OK)
+      {
+        Log.notice("UPDATE SUCCEEDED" CR);
+        return true;
+      }
+      else 
+      {
+        if(ret==HTTP_UPDATE_FAILED)
+        {
+          Log.notice("Upgrade Failed" CR);
+        }
+      }
+    }
+    
+  return false;
 }
 
 
 void writeSettings()
 {
+  Log.notice("Writing conf" CR);
   eeAddress = 0;
-  conf.timestamp = millis();
-
-  EEPROM.write(eeAddress, conf.timestamp);
+  
+  EEPROM.write(eeAddress, conf.valid);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.starting);
+  EEPROM.write(eeAddress, conf.timestamp);
   eeAddress++;
   EEPROM.write(eeAddress, conf.mqtt_port);
   eeAddress++;  
@@ -266,23 +311,38 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
 
 void readSettings()
 {
+  Log.notice("Reading conf" CR);
   eeAddress = 0;
 
-  conf.timestamp = EEPROM.read(eeAddress);
-  eeAddress++;
-  conf.starting = EEPROM.read(eeAddress);
-  eeAddress++;
+  conf.valid = EEPROM.read(eeAddress); 
 
-  conf.mqtt_port = EEPROM.read(eeAddress);
-  eeAddress++;
-  conf.mqtt_server_length = EEPROM.read(eeAddress);
-  eeAddress++;
-  conf.reset = EEPROM.read(eeAddress);
-
-  eeAddress++;
-  readEEPROM(eeAddress, conf.mqtt_server_length, conf.mqtt_server);
+  if(conf.valid != 1)
+  {
+    Log.notice("Conf not valid, skip reading" CR);
+  }
+  else
+  {
+    eeAddress++;
+    conf.timestamp = EEPROM.read(eeAddress);
+    eeAddress++;
+    conf.mqtt_port = EEPROM.read(eeAddress);
+    eeAddress++;
+    conf.mqtt_server_length = EEPROM.read(eeAddress);
+    eeAddress++;
+    conf.reset = EEPROM.read(eeAddress);
+    
+    eeAddress++;
+    readEEPROM(eeAddress, conf.mqtt_server_length, conf.mqtt_server);
+  }
 
   Log.notice("Conf read" CR);
+
+  
+  Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
+  Log.notice("conf.timestamp %d" CR, conf.timestamp);
+  Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
+  Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port); 
+  Log.notice("conf.valid %d" CR, conf.valid); 
 }
 
 
