@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <DNSServer.h>
@@ -53,12 +54,25 @@ struct Settings {
 };
 
 
+struct Message {
+  char msg[200];
+  int requires_ack = 1;
+  int ack = 0;
+  long timestamp = 0;
+};
+
+
 Settings conf = {};
 std::unique_ptr<ESP8266WebServer> server;
 
 
 HTTPClient http;
+WiFiClient espClient;
+PubSubClient client(espClient);
 boolean posting;
+long lastMsg = 0;
+char msg[50];
+int value = 0;
 
 
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
@@ -171,6 +185,44 @@ void gen_random(char *s, const int len) {
 }
 
 
+void setUpMqTTClient()
+{
+  client.setServer(conf.mqtt_server, conf.mqtt_port);
+  client.setCallback(callback);
+}
+
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+
+void reconnect() {
+  // Loop until we're reconnected
+  //while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect(ID.c_str())) {
+      Serial.println("connected");
+      // Once connected, publish an announcement...
+      //client.publish("outTopic", "hello world");
+      // ... and resubscribe
+      //client.subscribe("inTopic");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  //}
+}
 
 void setup()
 {
@@ -218,7 +270,15 @@ void loop() {
   else
   {
     timeClient.update();
-    //Serial.println(timeClient.getFormattedTime());
+    
+    if (!client.connected()) 
+    {
+      reconnect();
+    }
+    else
+    {
+      client.loop();
+    }
   }
 
   if (conf.reset == 1)
@@ -250,18 +310,17 @@ void initSettings()
 
   readSettings();
 
-  loadConfiguration();
-
   if (conf.valid == 1)
   {
     inited = true;
-    updateFirmware();
     timeClient.begin();
+    setUpMqTTClient();
   }
   else
   {
     delay(5000);
     Log.notice("RETRYING CONFIGURATION LOAD" CR);
+    loadConfiguration();
   }
 }
 
