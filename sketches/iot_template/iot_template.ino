@@ -10,11 +10,13 @@
 #include <ArduinoJson.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <Arduino.h>  // for type definitions
 
 
-IPAddress local_ip(192,168,5,1);
-IPAddress gateway(192,168,5,1);
-IPAddress subnet(255,255,255,0);
+
+IPAddress local_ip(192, 168, 5, 1);
+IPAddress gateway(192, 168, 5, 1);
+IPAddress subnet(255, 255, 255, 0);
 
 #define SKETCH_VERSION "001"
 #define SPIFFS_VERSION "001"
@@ -34,7 +36,7 @@ const long utcOffsetInSeconds = 19800; // INDIA
 boolean debug = true;
 int eeAddress = 0;
 String IP;
-boolean inited;
+boolean inited = false;
 
 WiFiManager wifiManager;
 WiFiUDP ntpUDP;
@@ -43,7 +45,7 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 
 struct Settings {
   int valid = 1;
-  int mqtt_port = 0;  
+  int mqtt_port = 0;
   int mqtt_server_length = 0;
   char mqtt_server[50] = "0.0.0.0";
   long timestamp = 0;
@@ -59,11 +61,29 @@ HTTPClient http;
 boolean posting;
 
 
+template <class T> int EEPROM_writeAnything(int ee, const T& value)
+{
+    const byte* p = (const byte*)(const void*)&value;
+    unsigned int i;
+    for (i = 0; i < sizeof(value); i++)
+          EEPROM.write(ee++, *p++);
+    return i;
+}
+
+template <class T> int EEPROM_readAnything(int ee, T& value)
+{
+    byte* p = (byte*)(void*)&value;
+    unsigned int i;
+    for (i = 0; i < sizeof(value); i++)
+          *p++ = EEPROM.read(ee++);
+    return i;
+}
+
 
 void loadConfiguration()
-{ 
-  Log.notice("loadConfiguration" CR);  
-  
+{
+  Log.notice("loadConfiguration" CR);
+
   HTTPClient https;
   boolean failed = true;
 
@@ -71,55 +91,55 @@ void loadConfiguration()
 
   http.begin(url, fingerprint);
   int httpCode = http.GET();
-  
-  if (httpCode == 200) 
+
+  if (httpCode == 200)
   {
     String payload = http.getString();
+    Serial.println(payload);
     char json[payload.length() + 1];
     payload.toCharArray(json, payload.length() + 1);
 
     StaticJsonBuffer<200> jsonBuffer;
     JsonObject& root = jsonBuffer.parseObject(json);
 
-    if (root.success()) 
+    if (root.success())
     {
       int code = root["code"];
-      if(code == 200)
+      if (code == 200)
       {
-          String mqtt_host = root["data"]["mqtt_host"];
-          conf.mqtt_server[mqtt_host.length() + 1];
-          mqtt_host.toCharArray(conf.mqtt_server, mqtt_host.length() + 1);
+        String mqtt_host = root["data"]["mqtt_host"];
+        conf.mqtt_server[mqtt_host.length() + 1];
+        mqtt_host.toCharArray(conf.mqtt_server, mqtt_host.length() + 1);
 
-          conf.mqtt_port = root["data"]["mqtt_port"];
-          conf.timestamp = root["data"]["timestamp"];
+        conf.mqtt_port = root["data"]["mqtt_port"];
+        conf.timestamp = root["data"]["timestamp"];
 
-          conf.mqtt_server_length = sizeof(conf.mqtt_server);
-          conf.valid = 1;
+        conf.mqtt_server_length = sizeof(conf.mqtt_server);
+        conf.valid = 1;
 
-          failed = false;
-      }      
+        failed = false;
+      }
     }
   }
-   
+
   http.end();
 
-  if(!failed)
+  if (!failed)
   {
-    writeSettings();
+    writeSettings();    
     inited = true;
   }
   else
   {
-    Log.notice("Failed to load config. Trying after sometime" CR);
-    conf.valid = 0; 
-    delay(5000);
+    conf.valid = 0;
+    Log.notice("Failed to load config. Try again after sometime" CR);
   }
 }
 
 
 String generateClientID()
 {
-  byte mac[6]; 
+  byte mac[6];
   WiFi.macAddress(mac);
   String chipId = String(ESP.getChipId(), HEX);
   String flashChipId = String(ESP.getFlashChipId(), HEX);
@@ -130,30 +150,30 @@ String generateClientID()
 
 String generateAPName()
 {
-  char ran[8]; 
+  char ran[8];
   gen_random(ran, 8);
-  
+
   return String(TYPE_CODE) + "-" + String(ran);
 }
 
 
 void gen_random(char *s, const int len) {
-    static const char alphanum[] =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
+  static const char alphanum[] =
+    "0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz";
 
-    for (int i = 0; i < len; ++i) {
-        s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
-    }
+  for (int i = 0; i < len; ++i) {
+    s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
+  }
 
-    s[len] = 0;
+  s[len] = 0;
 }
 
 
 
 void setup()
-{  
+{
   Serial.begin(9600);
 
   while (!Serial) {
@@ -161,15 +181,15 @@ void setup()
   }
 
   Log.begin(LOG_LEVEL_NOTICE, &Serial);
-  
+
   // start eeprom
   EEPROM.begin(EEPROM_LIMIT);
 
   // Check for reset and do reset routine
   readSettings();
-  
-  if(conf.reset == 1){
-    Log.notice("Reset flag detected!" CR);    
+
+  if (conf.reset == 1) {
+    Log.notice("Reset flag detected!" CR);
     doReset();
   }
 
@@ -191,7 +211,7 @@ void setup()
 
 void loop() {
 
-  if(!inited)
+  if (!inited)
   {
     initSettings();
   }
@@ -210,13 +230,13 @@ void loop() {
 
 
 void doReset()
-{ 
+{
   conf.timestamp = 0;
   conf.mqtt_server_length = 0;
   conf.reset = 0;
   memset(conf.mqtt_server, 0, sizeof(conf.mqtt_server));
-  
-  eraseSettings();   
+
+  eraseSettings();
   delay(1000);
   wifiManager.resetSettings();
   delay(1000);
@@ -227,86 +247,79 @@ void initSettings()
 {
   // Get ID
   ID = generateClientID();
-  
+
   readSettings();
 
   loadConfiguration();
 
-  if(conf.valid == 1)
+  //updateFirmware();
+
+  if (conf.valid == 1)
   {
     inited = true;
     timeClient.begin();
-  }  
+  }
+  else
+  {
+    delay(5000);
+    Log.notice("RETRYING CONFIGURATION LOAD" CR);
+  }
 }
 
 
 
-bool updateFirmware(bool sketch=true)
+void updateFirmware()
 {
-    String msg;
-    t_httpUpdate_return ret;
-     
-    ESPhttpUpdate.rebootOnUpdate(false);
-    
-    if(sketch)
+  Log.notice("UPDATING" CR);
+
+  boolean sketch = true;
+  String msg;
+  t_httpUpdate_return ret;
+
+  ESPhttpUpdate.rebootOnUpdate(false);
+
+  Log.notice("UPDATING" CR);
+  //ret = ESPhttpUpdate.update("https://iot.flashvisions.com/api/public/update", "", String(fingerprint));
+  ret = ESPhttpUpdate.update("http://iot.flashvisions.com/api/public/update");
+
+  if (ret != HTTP_UPDATE_NO_UPDATES)
+  {
+    if (ret == HTTP_UPDATE_OK)
     {
-      ret=ESPhttpUpdate.update(String(UPDATE_ENDPOINT),SKETCH_VERSION);
+      Log.notice("UPDATE SUCCEEDED" CR);
+      conf.reset = 1;
     }
-    else 
+    else
     {
-      ret=ESPhttpUpdate.updateSpiffs(String(UPDATE_ENDPOINT),SPIFFS_VERSION);
-    }
-    if(ret!=HTTP_UPDATE_NO_UPDATES)
-    {
-      if(ret==HTTP_UPDATE_OK)
+      if (ret == HTTP_UPDATE_FAILED)
       {
-        Log.notice("UPDATE SUCCEEDED" CR);
-        return true;
-      }
-      else 
-      {
-        if(ret==HTTP_UPDATE_FAILED)
-        {
-          Log.notice("Upgrade Failed" CR);
-        }
+        Log.notice("Upgrade Failed" CR);
+        Log.notice("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
       }
     }
-    
-  return false;
+  }
 }
 
 
 void writeSettings()
 {
-  Log.notice("Writing conf" CR);
+  Log.notice("Writing conf" CR);  
   eeAddress = 0;
   
   EEPROM.write(eeAddress, conf.valid);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.timestamp);
-  eeAddress++;
-  EEPROM.write(eeAddress, conf.mqtt_port);
-  eeAddress++;  
-  EEPROM.write(eeAddress, conf.mqtt_server_length);
-  eeAddress++;
-  EEPROM.write(eeAddress, conf.reset);  
 
-  eeAddress++;
-  writeEEPROM(eeAddress, conf.mqtt_server_length, conf.mqtt_server);
-
+  EEPROM_writeAnything(eeAddress, conf);
   EEPROM.commit();
 
   Log.notice("Conf saved" CR);
+  Log.notice("conf.valid %d" CR, conf.valid);
+  Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
+  Log.notice("conf.timestamp %d" CR, conf.timestamp);
+  Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
+  Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port);
 }
 
-
-
-void writeEEPROM(int startAdr, int len, char* writeString) {
-  //yield();
-  for (int i = 0; i < len; i++) {
-    EEPROM.write(startAdr + i, writeString[i]);
-  }
-}
 
 
 void readSettings()
@@ -314,52 +327,31 @@ void readSettings()
   Log.notice("Reading conf" CR);
   eeAddress = 0;
 
-  conf.valid = EEPROM.read(eeAddress); 
-
-  if(conf.valid != 1)
+  conf.valid = EEPROM.read(eeAddress);
+  eeAddress++;
+  
+  if (conf.valid != 1)
   {
-    Log.notice("Conf not valid, skip reading" CR);
+      Log.notice("Conf not valid, skip reading" CR);
   }
   else
   {
-    eeAddress++;
-    conf.timestamp = EEPROM.read(eeAddress);
-    eeAddress++;
-    conf.mqtt_port = EEPROM.read(eeAddress);
-    eeAddress++;
-    conf.mqtt_server_length = EEPROM.read(eeAddress);
-    eeAddress++;
-    conf.reset = EEPROM.read(eeAddress);
-    
-    eeAddress++;
-    readEEPROM(eeAddress, conf.mqtt_server_length, conf.mqtt_server);
-  }
-
-  Log.notice("Conf read" CR);
-
-  
-  Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
-  Log.notice("conf.timestamp %d" CR, conf.timestamp);
-  Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
-  Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port); 
-  Log.notice("conf.valid %d" CR, conf.valid); 
-}
-
-
-
-void readEEPROM(int startAdr, int maxLength, char* dest) {
-
-  for (int i = 0; i < maxLength; i++) {
-    dest[i] = char(EEPROM.read(startAdr + i));
+      EEPROM_readAnything(eeAddress, conf);
+     
+      Log.notice("Conf read" CR);      
+      Log.notice("conf.valid %d" CR, conf.valid);
+      Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
+      Log.notice("conf.timestamp %d" CR, conf.timestamp);
+      Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
+      Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port);
   }
 }
-
 
 
 void eraseSettings()
 {
   Log.notice("Erasing eeprom" CR);
-  
+
   for (int i = 0; i < EEPROM_LIMIT; i++)
     EEPROM.write(i, 0);
 }
