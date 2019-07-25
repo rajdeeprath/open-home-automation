@@ -252,11 +252,10 @@ void initSettings()
 
   loadConfiguration();
 
-  //updateFirmware();
-
   if (conf.valid == 1)
   {
     inited = true;
+    updateFirmware();
     timeClient.begin();
   }
   else
@@ -280,7 +279,7 @@ void updateFirmware()
 
   Log.notice("UPDATING" CR);
   //ret = ESPhttpUpdate.update("https://iot.flashvisions.com/api/public/update", "", String(fingerprint));
-  ret = ESPhttpUpdate.update("http://iot.flashvisions.com/api/public/update");
+  ret = ESPhttpUpdate.update("http://iot.flashvisions.com/firmware/iot_template.ino.nodemcu.bin");
 
   if (ret != HTTP_UPDATE_NO_UPDATES)
   {
