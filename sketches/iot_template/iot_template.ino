@@ -1,9 +1,8 @@
 #include <ESP8266WiFi.h>
-#include <PubSubClient.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <DNSServer.h>
-#include <ESP8266WebServer.h>
+// #include <DNSServer.h>
+// #include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
 #include <math.h>
@@ -12,7 +11,7 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <Arduino.h>  // for type definitions
-
+#include <MQTT.h>
 
 
 IPAddress local_ip(192, 168, 5, 1);
@@ -33,12 +32,11 @@ const int EEPROM_LIMIT = 512;
 const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";// iot.flashvisions.com
 const long utcOffsetInSeconds = 19800; // INDIA
 
-// Debugging mode
-boolean debug = true;
 int eeAddress = 0;
 String IP;
 boolean inited = false;
 
+WiFiClient net;
 WiFiManager wifiManager;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
@@ -60,19 +58,14 @@ struct Message {
   int ack = 0;
   long timestamp = 0;
 };
-
+struct Message messages[5];
 
 Settings conf = {};
 std::unique_ptr<ESP8266WebServer> server;
 
-
 HTTPClient http;
 WiFiClient espClient;
-PubSubClient client(espClient);
-boolean posting;
-long lastMsg = 0;
-char msg[50];
-int value = 0;
+MQTTClient client;
 
 
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
@@ -91,6 +84,23 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
     for (i = 0; i < sizeof(value); i++)
           *p++ = EEPROM.read(ee++);
     return i;
+}
+
+
+void publish_message(char *payload, int requires_ack)
+{
+  Message record;
+
+  //record.msg = payload;
+  record.requires_ack = requires_ack;
+  record.ack = 0;
+  record.timestamp = timeClient.getEpochTime();
+
+  // store record in array
+  // generate topic
+  
+  //client.publish("outTopic", "hello world");
+
 }
 
 
@@ -187,41 +197,31 @@ void gen_random(char *s, const int len) {
 
 void setUpMqTTClient()
 {
-  client.setServer(conf.mqtt_server, conf.mqtt_port);
-  client.setCallback(callback);
+  client.begin(conf.mqtt_server, conf.mqtt_port, net);
+  client.onMessage(messageReceived);
 }
 
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+void messageReceived(String &topic, String &payload) {
+  Serial.println("incoming: " + topic + " - " + payload);
+}
+
+void connect() {
+
+  Log.notice("Connecting..." CR);
+
+  char CLIENTID[ID.length() + 1];
+  ID.toCharArray(CLIENTID, ID.length() + 1);
+  
+  while (!client.connect(CLIENTID, "anonymous", "anonymous")) {
+    Log.notice("." CR);
+    delay(1000);
   }
-  Serial.println();
-}
 
+  Log.notice("Connected..." CR);
 
-void reconnect() {
-  // Loop until we're reconnected
-  //while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if (client.connect(ID.c_str())) {
-      Serial.println("connected");
-      // Once connected, publish an announcement...
-      //client.publish("outTopic", "hello world");
-      // ... and resubscribe
-      //client.subscribe("inTopic");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  //}
+  //client.subscribe("/hello");
+  // client.unsubscribe("/hello");
 }
 
 void setup()
@@ -273,11 +273,12 @@ void loop() {
     
     if (!client.connected()) 
     {
-      reconnect();
+      connect();
     }
     else
     {
       client.loop();
+      delay(10);
     }
   }
 
