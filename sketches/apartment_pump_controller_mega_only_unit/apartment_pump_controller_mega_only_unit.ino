@@ -818,8 +818,7 @@ void testSensors()
       {
         String sensorReport = "Sensors problem detected!";
         sensorReport = sensorReport + "\n\r";
-        sensorReport = sensorReport + "normalLow="+normalLow+",invertLow="+invertLow+",normalMid="+normalMid+",invertMid="+invertMid;
-        sensorReport = sensorReport + ",normalHigh="+normalHigh+",invertHigh="+invertHigh+",normalPump="+normalPump+",invertPump="+invertPump;
+        sensorReport = sensorReport + "NL="+normalLow+",IN="+invertLow+",NM="+normalMid+",IM="+invertMid + ",NH="+normalHigh+",IH="+invertHigh+",NP="+normalPump+",IP="+invertPump;
         
 
         // pump sensor error
