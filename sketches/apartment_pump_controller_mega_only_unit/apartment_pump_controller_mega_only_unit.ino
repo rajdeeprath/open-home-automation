@@ -29,7 +29,7 @@
 #define SENSOR_4_DATA 38 //data - green | yellow
 
 // indicators
-#define ALARM 40
+#define ALARM 48
 #define LED_MID 42
 #define LED_HIGH 43
 #define LED_SYSTEM 44
