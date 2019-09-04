@@ -1,8 +1,9 @@
 #include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-// #include <DNSServer.h>
-// #include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
 #include <math.h>
@@ -25,8 +26,8 @@ String ID;
 const char TYPE_CODE[10] = "SM-BL"; // Code for Smart Bell
 const char UPDATE_SKETCH[7] = "sketch";
 const char UPDATE_SPIFFS[7] = "spiffs";
-char* UPDATE_ENDPOINT = "https://iot.flashvisions.com/api/public/update";
-char* INIT_ENDPOINT = "https://iot.flashvisions.com/api/public/initialize";
+char* UPDATE_ENDPOINT = "http://iot.flashvisions.com/api/public/update";
+char* INIT_ENDPOINT = "http://iot.flashvisions.com/api/public/initialize";
 const char AP_DEFAULT_PASS[10] = "iot@123!";
 const int EEPROM_LIMIT = 512;
 const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";// iot.flashvisions.com
@@ -107,15 +108,12 @@ void publish_message(char *payload, int requires_ack)
 void loadConfiguration()
 {
   Log.notice("loadConfiguration" CR);
-
-  HTTPClient https;
   boolean failed = true;
 
   String url = String(INIT_ENDPOINT) + "?id=" + String(ID) + "&ver=" + String(SKETCH_VERSION);
 
-  http.begin(url, fingerprint);
+  http.begin(url);
   int httpCode = http.GET();
-
   if (httpCode == 200)
   {
     String payload = http.getString();
@@ -206,16 +204,16 @@ void messageReceived(String &topic, String &payload) {
   Serial.println("incoming: " + topic + " - " + payload);
 }
 
+
 void connect() {
-
   Log.notice("Connecting..." CR);
-
+  
   char CLIENTID[ID.length() + 1];
   ID.toCharArray(CLIENTID, ID.length() + 1);
-  
+
   while (!client.connect(CLIENTID, "anonymous", "anonymous")) {
     Log.notice("." CR);
-    delay(1000);
+    delay(2000);
   }
 
   Log.notice("Connected..." CR);
@@ -223,6 +221,7 @@ void connect() {
   //client.subscribe("/hello");
   // client.unsubscribe("/hello");
 }
+
 
 void setup()
 {
@@ -255,7 +254,7 @@ void setup()
   //if you get here you have connected to the WiFi
   Log.notice("connected...yeey :" CR);
 
-  IP = String(WiFi.localIP());
+  IP = WiFi.localIP().toString();
   Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
 
   ID = generateClientID();
@@ -310,17 +309,18 @@ void initSettings()
   ID = generateClientID();
 
   readSettings();
-
+  
   if (conf.valid == 1)
   {
     inited = true;
-    timeClient.begin();
+    timeClient.begin();    
     setUpMqTTClient();
+    //updateFirmware();
   }
   else
   {
-    delay(5000);
     Log.notice("RETRYING CONFIGURATION LOAD" CR);
+    delay(5000);
     loadConfiguration();
   }
 }
@@ -413,4 +413,6 @@ void eraseSettings()
 
   for (int i = 0; i < EEPROM_LIMIT; i++)
     EEPROM.write(i, 0);
+
+  EEPROM.commit();
 }
