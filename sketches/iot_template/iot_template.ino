@@ -2,8 +2,6 @@
 #include <WiFiClientSecure.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
-#include <DNSServer.h>
-#include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <EEPROM.h>
 #include <math.h>
@@ -21,6 +19,7 @@ IPAddress subnet(255, 255, 255, 0);
 
 #define SKETCH_VERSION "001"
 #define SPIFFS_VERSION "001"
+#define SOUND_PIN A0
 
 String ID;
 const char TYPE_CODE[10] = "SM-BL"; // Code for Smart Bell
@@ -33,9 +32,18 @@ const int EEPROM_LIMIT = 512;
 const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";// iot.flashvisions.com
 const long utcOffsetInSeconds = 19800; // INDIA
 
+const int MQTT_MAX_CONNECT_TRIES = 2;
+const int MAX_MESSAGES_STORE = 5;
+
 int eeAddress = 0;
 String IP;
 boolean inited = false;
+int mqtt_connect_try = 0;
+boolean mqtt_connected = false;
+int message_counter = 0;
+
+String PUB_TOPIC = "";
+String SUB_TOPIC = "";
 
 WiFiClient net;
 WiFiManager wifiManager;
@@ -56,13 +64,14 @@ struct Settings {
 struct Message {
   char msg[200];
   int requires_ack = 1;
-  int ack = 0;
+  int published = 0;
+  int ack_received = 0;
   long timestamp = 0;
 };
-struct Message messages[5];
 
-Settings conf = {};
-std::unique_ptr<ESP8266WebServer> server;
+
+struct Message messages[MAX_MESSAGES_STORE];
+struct Settings conf = {};
 
 HTTPClient http;
 WiFiClient espClient;
@@ -78,6 +87,7 @@ template <class T> int EEPROM_writeAnything(int ee, const T& value)
     return i;
 }
 
+
 template <class T> int EEPROM_readAnything(int ee, T& value)
 {
     byte* p = (byte*)(void*)&value;
@@ -88,21 +98,48 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 }
 
 
-void publish_message(char *payload, int requires_ack)
+
+void publish_data(const char topic[], const char payload[], int requires_ack)
 {
-  Message record;
+  if(mqtt_connected)
+  {
+    int len = strlen(payload);
 
-  //record.msg = payload;
-  record.requires_ack = requires_ack;
-  record.ack = 0;
-  record.timestamp = timeClient.getEpochTime();
+    Message record = {};
+    strcpy(record.msg, payload);
+    record.requires_ack = requires_ack;
+    record.timestamp = timeClient.getEpochTime();
+    
+    if(publishNow(topic, payload, len, true, 1))
+    {
+      record.published = 1;
+      Log.notice("Published" CR);  
+    }
+    else
+    {
+      Log.notice("Published Failed" CR);
+    }
 
-  // store record in array
-  // generate topic
-  
-  //client.publish("outTopic", "hello world");
-
+    // store record in array and increment counter
+    messages[message_counter] = record;
+    message_counter = message_counter + 1;
+  }
 }
+
+
+void cleanUpMessages()
+{
+  
+}
+
+
+
+
+boolean publishNow(const char topic[], const char payload[], int len, bool retained, int qos)
+{
+  return client.publish(topic, payload, len, retained, qos);
+}
+
 
 
 void loadConfiguration()
@@ -212,16 +249,38 @@ void connect() {
   ID.toCharArray(CLIENTID, ID.length() + 1);
 
   while (!client.connect(CLIENTID, "anonymous", "anonymous")) {
+    mqtt_connected = false;
+    mqtt_connect_try++;
+    
+    if(mqtt_connect_try > MQTT_MAX_CONNECT_TRIES){
+      Log.notice("Too many retries. Skipping..." CR);
+      mqtt_connect_try = 0;
+      return;
+    }
+
     Log.notice("." CR);
     delay(2000);
   }
 
   Log.notice("Connected..." CR);
+  mqtt_connected = true;
 
   //client.subscribe("/hello");
   // client.unsubscribe("/hello");
 }
 
+
+void setupSensors()
+{
+  pinMode(SOUND_PIN, INPUT);
+}
+
+
+void readSensor()
+{
+  int statusSensor = analogRead (SOUND_PIN);
+  //Log.notice("VAL = %d" CR, statusSensor);
+}
 
 void setup()
 {
@@ -235,6 +294,9 @@ void setup()
 
   // start eeprom
   EEPROM.begin(EEPROM_LIMIT);
+
+  // init sensors
+  setupSensors();
 
   // Check for reset and do reset routine
   readSettings();
@@ -269,6 +331,7 @@ void loop() {
   else
   {
     timeClient.update();
+    readSensor();
     
     if (!client.connected()) 
     {
@@ -278,7 +341,15 @@ void loop() {
     {
       client.loop();
       delay(10);
-    }
+
+      char payload[] = "{\"msg\":\"hello\"}";
+      PUB_TOPIC = "dt/home/" + ID + "/";
+      char topic[PUB_TOPIC.length() + 1];
+      PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
+      publish_data(topic, payload, 1);
+
+      delay(1000);
+    }    
   }
 
   if (conf.reset == 1)
@@ -297,6 +368,7 @@ void doReset()
   memset(conf.mqtt_server, 0, sizeof(conf.mqtt_server));
 
   eraseSettings();
+  
   delay(1000);
   wifiManager.resetSettings();
   delay(1000);
@@ -337,7 +409,6 @@ void updateFirmware()
 
   ESPhttpUpdate.rebootOnUpdate(false);
 
-  Log.notice("UPDATING" CR);
   //ret = ESPhttpUpdate.update("https://iot.flashvisions.com/api/public/update", "", String(fingerprint));
   ret = ESPhttpUpdate.update("http://iot.flashvisions.com/firmware/iot_template.ino.nodemcu.bin");
 
@@ -346,7 +417,7 @@ void updateFirmware()
     if (ret == HTTP_UPDATE_OK)
     {
       Log.notice("UPDATE SUCCEEDED" CR);
-      conf.reset = 1;
+      ESP.restart();
     }
     else
     {
