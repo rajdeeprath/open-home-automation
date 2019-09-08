@@ -28,18 +28,20 @@ const char UPDATE_SPIFFS[7] = "spiffs";
 char* UPDATE_ENDPOINT = "http://iot.flashvisions.com/api/public/update";
 char* INIT_ENDPOINT = "http://iot.flashvisions.com/api/public/initialize";
 const char AP_DEFAULT_PASS[10] = "iot@123!";
-const int EEPROM_LIMIT = 512;
-const long utcOffsetInSeconds = 19800; // INDIA
-const int MQTT_MAX_CONNECT_TRIES = 2;
-const int MAX_MESSAGES_STORE = 20;
-const int MAX_MESSAGE_STORE_TIME_SECONDS = 5;
+const unsigned int EEPROM_LIMIT = 512;
+const unsigned long utcOffsetInSeconds = 19800; // INDIA
+const unsigned int MQTT_MAX_CONNECT_TRIES = 2;
+const unsigned int MAX_MESSAGES_STORE = 20;
+const unsigned int MAX_MESSAGE_STORE_TIME_SECONDS = 5;
 
-int eeAddress = 0;
+unsigned int eeAddress = 0;
+unsigned int mqtt_connect_try = 0;
+unsigned int message_counter = 0;
+
 String IP;
 boolean inited = false;
-int mqtt_connect_try = 0;
 boolean mqtt_connected = false;
-int message_counter = 0;
+
 
 String PUB_TOPIC = "";
 String SUB_TOPIC = "";
@@ -51,29 +53,28 @@ NTPClient timeClient(ntpUDP, "pool.ntp.org", utcOffsetInSeconds);
 
 
 struct Settings {
-  int valid = 1;
-  int mqtt_port = 0;
-  int mqtt_server_length = 0;
+  unsigned int valid = 1;
+  unsigned int mqtt_port = 0;
+  unsigned int mqtt_server_length = 0;
   char mqtt_server[50] = "0.0.0.0";
-  long timestamp = 0;
-  int reset = 0;
+  unsigned long timestamp = 0;
+  unsigned int reset = 0;
 };
 
 
 struct Message {
-  char id[15];
+  char id[10];
   char topic[60];
-  char msg[100];
-  int requires_ack = 1;
-  int published = 0;
-  int publish_error = 0;
-  int ack_received = 0;
-  long timestamp = 0;
+  char msg[50];
+  unsigned int requires_ack = 0;
+  boolean retain = false;
+  unsigned int published = 0;
+  unsigned int publish_error = 0;
+  unsigned int ack_received = 0;
+  unsigned long timestamp = 0;
 };
 
-
 struct Message messages[MAX_MESSAGES_STORE];
-
 struct Settings conf = {};
 
 HTTPClient http;
@@ -101,7 +102,13 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 }
 
 
-void publish_data(const char topic[], const char payload[], int requires_ack)
+void publish_data(const char topic[], const char payload[], unsigned int requires_ack)
+{
+  publish_data(topic,payload,requires_ack, false);
+}
+
+
+void publish_data(const char topic[], const char payload[], unsigned int requires_ack, boolean retain)
 {
   if(message_counter < MAX_MESSAGES_STORE)
   {
@@ -109,6 +116,7 @@ void publish_data(const char topic[], const char payload[], int requires_ack)
     strcpy(record.topic, topic);
     strcpy(record.msg, payload);
     record.requires_ack = requires_ack;
+    record.retain = retain;
     record.timestamp = timeClient.getEpochTime();
     
     // store record in array and increment counter
@@ -126,9 +134,9 @@ void processMessages()
 {
   Log.notice("Processing messages" CR);
   
-  int i;
-  int indices[10];
-  int gc_counter = 0;
+  unsigned int i;
+  unsigned int indices[10];
+  unsigned int gc_counter = 0;
   long curr_timestamp = timeClient.getEpochTime();
   
   Log.notice("Total messages earlier = %d" CR, message_counter);
@@ -143,7 +151,7 @@ void processMessages()
       {
         Log.trace("Publishing message" CR);
         
-        if(publishNow(messages[i].topic, messages[i].msg, strlen(messages[i].msg), true, 1))
+        if(publishNow(messages[i].topic, messages[i].msg, strlen(messages[i].msg), messages[i].retain, 1))
         {
           messages[i].published = 1;
           Log.notice("Published" CR);  
@@ -159,7 +167,7 @@ void processMessages()
     {
       if((curr_timestamp - messages[i].timestamp > MAX_MESSAGE_STORE_TIME_SECONDS) || messages[i].publish_error == 1 || (messages[i].requires_ack == 1 && messages[i].ack_received != 1))
       {
-        int diff = curr_timestamp - messages[i].timestamp;
+        unsigned int diff = curr_timestamp - messages[i].timestamp;
         Log.notice("%d sec Old message record found at %d. Marking for removal" CR, diff, i);
         indices[gc_counter] = i;
         gc_counter++;
@@ -175,11 +183,13 @@ void processMessages()
 
 
 
-void cleanUpMessages(int itemsToClean, int item_indices[])
+void cleanUpMessages(unsigned int itemsToClean, unsigned int item_indices[])
 {
-  for(int i=0; i<itemsToClean;i++)
+  for(unsigned int i=0; i<itemsToClean;i++)
   {
-    int pos = item_indices[i];
+    
+    unsigned int pos = item_indices[i];
+    Message message = messages[pos];
     
     if(pos>0)
     {
@@ -203,13 +213,21 @@ void cleanUpMessages(int itemsToClean, int item_indices[])
         Log.trace("%d items" CR, message_counter);
       }
     }
+
+
+    if(message.publish_error == 1 || (message.requires_ack == 1 && message.ack_received != 1))
+    {
+      Log.notice("Topic %s message.requires_ack = %d message.ack_received = %d" CR, message.topic, message.requires_ack, message.ack_received);
+      Log.notice("Rescheduling message for transmission" CR);
+      publish_data(message.topic, message.msg, message.requires_ack);
+    }
   }
 }
 
 
-boolean publishNow(const char topic[], const char payload[], int len, bool retained, int qos)
+boolean publishNow(const char topic[], const char payload[], unsigned int len, bool retain, unsigned int qos)
 {
-  return client.publish(topic, payload, len, retained, qos);
+  return client.publish(topic, payload, len, retain, qos);
 }
 
 
@@ -234,7 +252,7 @@ void loadConfiguration()
 
     if (root.success())
     {
-      int code = root["code"];
+      unsigned int code = root["code"];
       if (code == 200)
       {
         String mqtt_host = root["data"]["mqtt_host"];
@@ -286,14 +304,22 @@ String generateAPName()
   return String(TYPE_CODE) + "-" + String(ran);
 }
 
+char *generateMessageId()
+{
+  char ran[10];
+  gen_random(ran, 10);
 
-void gen_random(char *s, const int len) {
+  return ran;
+}
+
+
+void gen_random(char *s, const unsigned int len) {
   static const char alphanum[] =
     "0123456789"
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz";
 
-  for (int i = 0; i < len; ++i) {
+  for (unsigned int i = 0; i < len; ++i) {
     s[i] = alphanum[rand() % (sizeof(alphanum) - 1)];
   }
 
