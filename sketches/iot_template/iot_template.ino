@@ -29,11 +29,10 @@ char* UPDATE_ENDPOINT = "http://iot.flashvisions.com/api/public/update";
 char* INIT_ENDPOINT = "http://iot.flashvisions.com/api/public/initialize";
 const char AP_DEFAULT_PASS[10] = "iot@123!";
 const int EEPROM_LIMIT = 512;
-const char fingerprint[80] = "19:4E:21:11:C1:69:2D:4E:0A:6B:F2:51:85:44:03:0A:10:2A:AE:BF";// iot.flashvisions.com
 const long utcOffsetInSeconds = 19800; // INDIA
-
 const int MQTT_MAX_CONNECT_TRIES = 2;
-const int MAX_MESSAGES_STORE = 5;
+const int MAX_MESSAGES_STORE = 20;
+const int MAX_MESSAGE_STORE_TIME_SECONDS = 5;
 
 int eeAddress = 0;
 String IP;
@@ -62,15 +61,19 @@ struct Settings {
 
 
 struct Message {
-  char msg[200];
+  char id[15];
+  char topic[60];
+  char msg[100];
   int requires_ack = 1;
   int published = 0;
+  int publish_error = 0;
   int ack_received = 0;
   long timestamp = 0;
 };
 
 
 struct Message messages[MAX_MESSAGES_STORE];
+
 struct Settings conf = {};
 
 HTTPClient http;
@@ -98,48 +101,116 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 }
 
 
-
 void publish_data(const char topic[], const char payload[], int requires_ack)
 {
-  if(mqtt_connected)
+  if(message_counter < MAX_MESSAGES_STORE)
   {
-    int len = strlen(payload);
-
     Message record = {};
+    strcpy(record.topic, topic);
     strcpy(record.msg, payload);
     record.requires_ack = requires_ack;
     record.timestamp = timeClient.getEpochTime();
     
-    if(publishNow(topic, payload, len, true, 1))
-    {
-      record.published = 1;
-      Log.notice("Published" CR);  
-    }
-    else
-    {
-      Log.notice("Published Failed" CR);
-    }
-
     // store record in array and increment counter
     messages[message_counter] = record;
     message_counter = message_counter + 1;
   }
+  else
+  {
+      Log.notice("Message queue full. Cannot store more messages" CR);
+  }
 }
 
 
-void cleanUpMessages()
+void processMessages()
 {
+  Log.notice("Processing messages" CR);
   
+  int i;
+  int indices[10];
+  int gc_counter = 0;
+  long curr_timestamp = timeClient.getEpochTime();
+  
+  Log.notice("Total messages earlier = %d" CR, message_counter);
+  
+  for(i = message_counter ; i-- > 0;)
+  {  
+    Log.notice("Index = %d, Current = %d , Record = %d" CR, i, curr_timestamp, messages[i].timestamp);
+
+    if(messages[i].published != 1)
+    {
+      if(mqtt_connected)
+      {
+        Log.trace("Publishing message" CR);
+        
+        if(publishNow(messages[i].topic, messages[i].msg, strlen(messages[i].msg), true, 1))
+        {
+          messages[i].published = 1;
+          Log.notice("Published" CR);  
+        }
+        else
+        {
+          messages[i].publish_error = 1;
+          Log.notice("Published Failed" CR);
+        }
+      }
+    }
+    else if(messages[i].timestamp > 0)
+    {
+      if((curr_timestamp - messages[i].timestamp > MAX_MESSAGE_STORE_TIME_SECONDS) || messages[i].publish_error == 1 || (messages[i].requires_ack == 1 && messages[i].ack_received != 1))
+      {
+        int diff = curr_timestamp - messages[i].timestamp;
+        Log.notice("%d sec Old message record found at %d. Marking for removal" CR, diff, i);
+        indices[gc_counter] = i;
+        gc_counter++;
+        
+        Log.notice("gc_counter %d" CR, gc_counter);
+      }
+    }
+  }
+
+  cleanUpMessages(gc_counter, indices);
+  Log.notice("Total messages later = %d" CR, message_counter);
 }
 
 
+
+void cleanUpMessages(int itemsToClean, int item_indices[])
+{
+  for(int i=0; i<itemsToClean;i++)
+  {
+    int pos = item_indices[i];
+    
+    if(pos>0)
+    {
+      Log.trace("Processing/Removing element at position %d" CR, pos);
+        
+      for(i=pos-1; i<message_counter-1;i++){
+        messages[i] = messages[i+1];
+      }
+      message_counter = message_counter - 1; 
+    }
+    else
+    {
+      if(message_counter == 1)
+      {
+        Log.trace("Only one item" CR);
+        memset(messages, 0, sizeof(messages));
+        message_counter = 0;
+      }
+      else
+      {
+        Log.trace("%d items" CR, message_counter);
+      }
+    }
+  }
+}
 
 
 boolean publishNow(const char topic[], const char payload[], int len, bool retained, int qos)
 {
   return client.publish(topic, payload, len, retained, qos);
 }
-
 
 
 void loadConfiguration()
@@ -320,7 +391,10 @@ void setup()
   Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
 
   ID = generateClientID();
+
+
 }
+
 
 void loop() {
 
@@ -335,22 +409,22 @@ void loop() {
     
     if (!client.connected()) 
     {
-      connect();
-    }
-    else
-    {
-      client.loop();
-      delay(10);
-
       char payload[] = "{\"msg\":\"hello\"}";
       PUB_TOPIC = "dt/home/" + ID + "/";
       char topic[PUB_TOPIC.length() + 1];
       PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
       publish_data(topic, payload, 1);
+      connect();
+    }
+    else
+    {
+      client.loop();
+    }
 
-      delay(1000);
-    }    
+    delay(2000);
+    processMessages();
   }
+
 
   if (conf.reset == 1)
   {
@@ -409,7 +483,6 @@ void updateFirmware()
 
   ESPhttpUpdate.rebootOnUpdate(false);
 
-  //ret = ESPhttpUpdate.update("https://iot.flashvisions.com/api/public/update", "", String(fingerprint));
   ret = ESPhttpUpdate.update("http://iot.flashvisions.com/firmware/iot_template.ino.nodemcu.bin");
 
   if (ret != HTTP_UPDATE_NO_UPDATES)
