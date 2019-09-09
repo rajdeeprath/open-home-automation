@@ -61,26 +61,25 @@ struct Settings {
   unsigned int reset = 0;
 };
 
+struct Settings conf = {};
 
 struct Message {
-  char id[10];
+  char id[20];
   char topic[60];
-  char msg[50];
-  unsigned int requires_ack = 0;
+  char msg[60];
+  boolean requires_ack = 0;
   boolean retain = false;
   unsigned int published = 0;
   unsigned int publish_error = 0;
-  unsigned int ack_received = 0;
+  boolean ack_received = 0;
   unsigned long timestamp = 0;
 };
 
 struct Message messages[MAX_MESSAGES_STORE];
-struct Settings conf = {};
 
 HTTPClient http;
 WiFiClient espClient;
 MQTTClient client;
-
 
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
 {
@@ -102,17 +101,25 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 }
 
 
-void publish_data(const char topic[], const char payload[], unsigned int requires_ack)
+void publish_data(const char topic[], const char payload[])
+{
+  publish_data(topic,payload,false, false);
+}
+
+
+void publish_data(const char topic[], const char payload[], boolean requires_ack)
 {
   publish_data(topic,payload,requires_ack, false);
 }
 
 
-void publish_data(const char topic[], const char payload[], unsigned int requires_ack, boolean retain)
+void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain)
 {
   if(message_counter < MAX_MESSAGES_STORE)
   {
     Message record = {};
+    String idstring = generateMessageId();
+    idstring.toCharArray(record.id, idstring.length() + 1);
     strcpy(record.topic, topic);
     strcpy(record.msg, payload);
     record.requires_ack = requires_ack;
@@ -137,14 +144,14 @@ void processMessages()
   unsigned int i;
   unsigned int indices[10];
   unsigned int gc_counter = 0;
-  long curr_timestamp = timeClient.getEpochTime();
+  unsigned long curr_timestamp = timeClient.getEpochTime();
   
   Log.notice("Total messages earlier = %d" CR, message_counter);
   
   for(i = message_counter ; i-- > 0;)
   {  
-    Log.notice("Index = %d, Current = %d , Record = %d" CR, i, curr_timestamp, messages[i].timestamp);
-
+    Log.notice("ID = %s Index = %d, Current = %d , Record = %d" CR, messages[i].id, i, curr_timestamp, messages[i].timestamp);
+    
     if(messages[i].published != 1)
     {
       if(mqtt_connected)
@@ -187,7 +194,6 @@ void cleanUpMessages(unsigned int itemsToClean, unsigned int item_indices[])
 {
   for(unsigned int i=0; i<itemsToClean;i++)
   {
-    
     unsigned int pos = item_indices[i];
     Message message = messages[pos];
     
@@ -304,12 +310,11 @@ String generateAPName()
   return String(TYPE_CODE) + "-" + String(ran);
 }
 
-char *generateMessageId()
+String generateMessageId()
 {
-  char ran[10];
-  gen_random(ran, 10);
-
-  return ran;
+  char ran[4];
+  gen_random(ran, 4);
+  return String(ran) + String(millis());
 }
 
 
@@ -435,15 +440,17 @@ void loop() {
     
     if (!client.connected()) 
     {
-      char payload[] = "{\"msg\":\"hello\"}";
-      PUB_TOPIC = "dt/home/" + ID + "/";
-      char topic[PUB_TOPIC.length() + 1];
-      PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
-      publish_data(topic, payload, 1);
+      
       connect();
     }
     else
     {
+      char payload[] = "{\"msg\":\"hello\"}";
+      PUB_TOPIC = "dt/home/" + ID + "/";
+      char topic[PUB_TOPIC.length() + 1];
+      PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
+      publish_data(topic, payload);
+      
       client.loop();
     }
 
