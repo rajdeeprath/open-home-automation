@@ -31,7 +31,7 @@ const char AP_DEFAULT_PASS[10] = "iot@123!";
 const unsigned int EEPROM_LIMIT = 512;
 const unsigned long utcOffsetInSeconds = 19800; // INDIA
 const unsigned int MQTT_MAX_CONNECT_TRIES = 2;
-const unsigned int MAX_MESSAGES_STORE = 20;
+const unsigned int MAX_MESSAGES_STORE = 10;
 const unsigned int MAX_MESSAGE_STORE_TIME_SECONDS = 5;
 
 unsigned int eeAddress = 0;
@@ -65,9 +65,10 @@ struct Settings conf = {};
 
 struct Message {
   char id[20];
-  char topic[60];
-  char msg[60];
+  char topic[100];
+  char msg[100];
   boolean requires_ack = 0;
+  unsigned int qos = 0;
   boolean retain = false;
   unsigned int published = 0;
   unsigned int publish_error = 0;
@@ -103,17 +104,23 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 
 void publish_data(const char topic[], const char payload[])
 {
-  publish_data(topic,payload,false, false);
+  publish_data(topic,payload,false, false, 0);
 }
 
 
 void publish_data(const char topic[], const char payload[], boolean requires_ack)
 {
-  publish_data(topic,payload,requires_ack, false);
+  publish_data(topic,payload,requires_ack, false, 0);
 }
 
 
 void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain)
+{
+  publish_data(topic,payload,requires_ack, retain, 0);
+}
+
+
+void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain, unsigned int qos)
 {
   if(message_counter < MAX_MESSAGES_STORE)
   {
@@ -124,6 +131,7 @@ void publish_data(const char topic[], const char payload[], boolean requires_ack
     strcpy(record.msg, payload);
     record.requires_ack = requires_ack;
     record.retain = retain;
+    record.qos = qos;
     record.timestamp = timeClient.getEpochTime();
     
     // store record in array and increment counter
