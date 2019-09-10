@@ -23,6 +23,8 @@ IPAddress subnet(255, 255, 255, 0);
 
 String ID;
 const char TYPE_CODE[10] = "SM-BL"; // Code for Smart Bell
+const char CMD[4] = "cmd";
+const char DT[3] = "dt";
 const char UPDATE_SKETCH[7] = "sketch";
 const char UPDATE_SPIFFS[7] = "spiffs";
 char* UPDATE_ENDPOINT = "http://iot.flashvisions.com/api/public/update";
@@ -67,12 +69,15 @@ struct Message {
   char id[20];
   char topic[100];
   char msg[100];
-  boolean requires_ack = 0;
+  char sub_source[20];
+  boolean requires_ack = false;
   unsigned int qos = 0;
   boolean retain = false;
   unsigned int published = 0;
   unsigned int publish_error = 0;
-  boolean ack_received = 0;
+  boolean ack_received = false;
+  boolean is_received = false; // is this a sent message or received message
+  unsigned int message_type = 0; // 0 = data & 1 = command
   unsigned long timestamp = 0;
 };
 
@@ -104,27 +109,34 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 
 void publish_data(const char topic[], const char payload[])
 {
-  publish_data(topic,payload,false, false, 0);
+  publish_data(topic,payload, 0, false, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], boolean requires_ack)
+void publish_data(const char topic[], const char payload[], const unsigned int message_type)
 {
-  publish_data(topic,payload,requires_ack, false, 0);
+  publish_data(topic,payload, message_type, false, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain)
+void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack)
 {
-  publish_data(topic,payload,requires_ack, retain, 0);
+  publish_data(topic, payload, message_type, requires_ack, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain, unsigned int qos)
+void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain)
+{
+  publish_data(topic,payload,message_type, requires_ack, retain, 0);
+}
+
+
+void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain, unsigned int qos)
 {
   if(message_counter < MAX_MESSAGES_STORE)
   {
     Message record = {};
+    record.message_type = message_type;
     String idstring = generateMessageId();
     idstring.toCharArray(record.id, idstring.length() + 1);
     strcpy(record.topic, topic);
@@ -166,7 +178,7 @@ void processMessages()
       {
         Log.trace("Publishing message" CR);
         
-        if(publishNow(messages[i].topic, messages[i].msg, strlen(messages[i].msg), messages[i].retain, 1))
+        if(publishNow(messages[i]))
         {
           messages[i].published = 1;
           Log.notice("Published" CR);  
@@ -239,9 +251,40 @@ void cleanUpMessages(unsigned int itemsToClean, unsigned int item_indices[])
 }
 
 
-boolean publishNow(const char topic[], const char payload[], unsigned int len, bool retain, unsigned int qos)
+boolean publishNow(Message m)
 {
-  return client.publish(topic, payload, len, retain, qos);
+  String topic_str = "";
+  String payload_str = "";
+  
+  if(m.message_type == 0)
+  {
+    if(strlen(m.sub_source) > 0)
+    {
+      topic_str = String(DT) + "/" + "smarthome" + "/" + ID + "/" + String(m.sub_source);
+    }
+    else
+    {
+      topic_str = String(DT) + "/" + "smarthome" + "/" + ID;
+    }
+
+    payload_str = String(m.msg);
+  }
+  else
+  {
+    topic_str = String(CMD) + "/" + "smarthome" + "/" + ID + "/" + "<destination-id>" + "/" + "<req-type>";    
+  }
+
+  char final_topic[topic_str.length() + 1];
+  topic_str.toCharArray(final_topic, topic_str.length() + 1);
+
+  char final_payload[payload_str.length() + 1];
+  payload_str.toCharArray(final_payload, payload_str.length() + 1);
+
+  unsigned int payload_length = (unsigned)strlen(final_payload);
+  Log.notice("Topic %s, Payload %s, Length %d" CR, final_topic, final_payload, payload_length);
+  
+  
+  return client.publish(final_topic, final_payload, payload_length, m.retain, m.qos);
 }
 
 
@@ -448,7 +491,6 @@ void loop() {
     
     if (!client.connected()) 
     {
-      
       connect();
     }
     else
@@ -457,9 +499,10 @@ void loop() {
       PUB_TOPIC = "dt/home/" + ID + "/";
       char topic[PUB_TOPIC.length() + 1];
       PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
-      publish_data(topic, payload);
+      publish_data(topic, payload, 0, false, false, 1);
       
       client.loop();
+      delay(10);
     }
 
     delay(2000);
