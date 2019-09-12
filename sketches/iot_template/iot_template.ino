@@ -59,6 +59,8 @@ struct Settings {
   unsigned int mqtt_port = 0;
   unsigned int mqtt_server_length = 0;
   char mqtt_server[50] = "0.0.0.0";
+  unsigned int device_name_length = 0;
+  char device_name[20] = "smartbell";
   unsigned long timestamp = 0;
   unsigned int reset = 0;
 };
@@ -140,6 +142,7 @@ void publish_data(const char topic[], const char payload[], const unsigned int m
     String idstring = generateMessageId();
     idstring.toCharArray(record.id, idstring.length() + 1);
     strcpy(record.topic, topic);
+    Log.notice("record topic %s length %d" CR, record.topic, strlen(record.topic));
     strcpy(record.msg, payload);
     record.requires_ack = requires_ack;
     record.retain = retain;
@@ -166,11 +169,11 @@ void processMessages()
   unsigned int gc_counter = 0;
   unsigned long curr_timestamp = timeClient.getEpochTime();
   
-  Log.notice("Total messages earlier = %d" CR, message_counter);
+  Log.trace("Total messages earlier = %d" CR, message_counter);
   
   for(i = message_counter ; i-- > 0;)
   {  
-    Log.notice("ID = %s Index = %d, Current = %d , Record = %d" CR, messages[i].id, i, curr_timestamp, messages[i].timestamp);
+    Log.trace("ID = %s Index = %d, Current = %d , Record = %d" CR, messages[i].id, i, curr_timestamp, messages[i].timestamp);
     
     if(messages[i].published != 1)
     {
@@ -195,17 +198,17 @@ void processMessages()
       if((curr_timestamp - messages[i].timestamp > MAX_MESSAGE_STORE_TIME_SECONDS) || messages[i].publish_error == 1 || (messages[i].requires_ack == 1 && messages[i].ack_received != 1))
       {
         unsigned int diff = curr_timestamp - messages[i].timestamp;
-        Log.notice("%d sec Old message record found at %d. Marking for removal" CR, diff, i);
+        Log.trace("%d sec Old message record found at %d. Marking for removal" CR, diff, i);
         indices[gc_counter] = i;
         gc_counter++;
         
-        Log.notice("gc_counter %d" CR, gc_counter);
+        Log.trace("gc_counter %d" CR, gc_counter);
       }
     }
   }
 
   cleanUpMessages(gc_counter, indices);
-  Log.notice("Total messages later = %d" CR, message_counter);
+  Log.trace("Total messages later = %d" CR, message_counter);
 }
 
 
@@ -244,45 +247,58 @@ void cleanUpMessages(unsigned int itemsToClean, unsigned int item_indices[])
     if(message.publish_error == 1 || (message.requires_ack == 1 && message.ack_received != 1))
     {
       Log.notice("Topic %s message.requires_ack = %d message.ack_received = %d" CR, message.topic, message.requires_ack, message.ack_received);
-      Log.notice("Rescheduling message for transmission" CR);
+      Log.trace("Rescheduling message for transmission" CR);
       publish_data(message.topic, message.msg, message.requires_ack);
     }
   }
 }
 
 
-boolean publishNow(Message m)
+
+String buildFinalTopic(unsigned int msg_type, char topic[], char sub[])
 {
   String topic_str = "";
-  String payload_str = "";
   
-  if(m.message_type == 0)
+  if(msg_type == 0)
   {
-    if(strlen(m.sub_source) > 0)
+    if(strlen(sub) > 0)
     {
-      topic_str = String(DT) + "/" + "smarthome" + "/" + ID + "/" + String(m.sub_source);
+      topic_str = String(DT) + "/" + "smarthome" + "/" + String(conf.device_name) + "/" + String(sub) + String(topic);
     }
     else
     {
-      topic_str = String(DT) + "/" + "smarthome" + "/" + ID;
+      topic_str = String(DT) + "/" + "smarthome" + "/" + String(conf.device_name) + String(topic);
     }
-
-    payload_str = String(m.msg);
   }
   else
   {
-    topic_str = String(CMD) + "/" + "smarthome" + "/" + ID + "/" + "<destination-id>" + "/" + "<req-type>";    
+    Log.trace("Not yet active!" CR);
+    topic_str = String(CMD) + "/" + "smarthome" + "/" + String(conf.device_name) + "/" + "<destination-id>" + "/" + "<req-type>";    
   }
+
+  return topic_str;
+}
+
+
+boolean publishNow(Message m)
+{
+  String topic_str = buildFinalTopic(m.message_type, m.topic, m.sub_source);
+  String payload_str = "{}";
+
+  if(m.message_type == 0)
+  {
+    payload_str = String(m.msg);
+  }
+  
 
   char final_topic[topic_str.length() + 1];
   topic_str.toCharArray(final_topic, topic_str.length() + 1);
-
+  
   char final_payload[payload_str.length() + 1];
   payload_str.toCharArray(final_payload, payload_str.length() + 1);
 
   unsigned int payload_length = (unsigned)strlen(final_payload);
-  Log.notice("Topic %s, Payload %s, Length %d" CR, final_topic, final_payload, payload_length);
-  
+  Log.notice("Topic %s, Payload %s, Length %d" CR, final_topic, final_payload, payload_length);  
   
   return client.publish(final_topic, final_payload, payload_length, m.retain, m.qos);
 }
@@ -316,10 +332,15 @@ void loadConfiguration()
         conf.mqtt_server[mqtt_host.length() + 1];
         mqtt_host.toCharArray(conf.mqtt_server, mqtt_host.length() + 1);
 
+        String deviceNameStr = root["data"]["device_name"];
+        conf.device_name [deviceNameStr.length() + 1];
+        deviceNameStr.toCharArray(conf.device_name, deviceNameStr.length() + 1);
+
         conf.mqtt_port = root["data"]["mqtt_port"];
         conf.timestamp = root["data"]["timestamp"];
 
         conf.mqtt_server_length = sizeof(conf.mqtt_server);
+        conf.device_name_length = sizeof(conf.device_name);
         conf.valid = 1;
 
         failed = false;
@@ -348,8 +369,19 @@ String generateClientID()
   WiFi.macAddress(mac);
   String chipId = String(ESP.getChipId(), HEX);
   String flashChipId = String(ESP.getFlashChipId(), HEX);
-
   return String(TYPE_CODE) + "-" + String(mac[0], HEX) + chipId + String(mac[1], HEX) + "-" + String(mac[2], HEX) + flashChipId + String(mac[3], HEX) + "-" + String(mac[4], HEX) + String(mac[5], HEX);
+}
+
+
+String macToStr(const uint8_t* mac)
+{
+  String result;
+  for (int i = 0; i < 6; ++i) {
+    result += String(mac[i], 16);
+    if (i < 5)
+      result += ':';
+  }
+  return result;
 }
 
 
@@ -387,6 +419,19 @@ void setUpMqTTClient()
 {
   client.begin(conf.mqtt_server, conf.mqtt_port, net);
   client.onMessage(messageReceived);
+  
+  declare_lastwill_testament();
+}
+
+
+void declare_lastwill_testament()
+{
+  char payload[] = "{\"online\":0}";
+  String topic_str = buildFinalTopic(0, "/status", "");
+  char willtopic[topic_str.length() + 1];
+  topic_str.toCharArray(willtopic, topic_str.length() + 1);
+  Log.trace("will topic %s" CR, willtopic);
+  client.setWill(willtopic, payload, true, 1);
 }
 
 
@@ -406,7 +451,7 @@ void connect() {
     mqtt_connect_try++;
     
     if(mqtt_connect_try > MQTT_MAX_CONNECT_TRIES){
-      Log.notice("Too many retries. Skipping..." CR);
+      Log.trace("Too many retries. Skipping..." CR);
       mqtt_connect_try = 0;
       return;
     }
@@ -418,8 +463,8 @@ void connect() {
   Log.notice("Connected..." CR);
   mqtt_connected = true;
 
-  //client.subscribe("/hello");
-  // client.unsubscribe("/hello");
+  // set state online
+  declare_online();
 }
 
 
@@ -471,10 +516,30 @@ void setup()
 
   IP = WiFi.localIP().toString();
   Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+}
 
-  ID = generateClientID();
+
+void declare_online()
+{
+  Log.notice("Online" CR);
+  
+  char payload[] = "{\"online\":1}";
+  String topic_str = "/status";
+  char topic[topic_str.length() + 1];
+  topic_str.toCharArray(topic, topic_str.length() + 1);
+  publish_data(topic, payload, 0, false, true, 1);
+}
 
 
+void declare_offline()
+{
+  Log.notice("Offline" CR);
+  
+  char payload[] = "{\"online\":0}";
+  String topic_str = "/status";
+  char topic[topic_str.length() + 1];
+  topic_str.toCharArray(topic, topic_str.length() + 1);
+  publish_data(topic, payload, 0, false, true, 1);
 }
 
 
@@ -496,10 +561,10 @@ void loop() {
     else
     {
       char payload[] = "{\"msg\":\"hello\"}";
-      PUB_TOPIC = "dt/home/" + ID + "/";
-      char topic[PUB_TOPIC.length() + 1];
-      PUB_TOPIC.toCharArray(topic, PUB_TOPIC.length() + 1);
-      publish_data(topic, payload, 0, false, false, 1);
+      String topic_str = "";
+      char topic[topic_str.length() + 1];
+      topic_str.toCharArray(topic, topic_str.length() + 1);
+      publish_data(topic, payload, 0, false, true, 1);
       
       client.loop();
       delay(10);
@@ -602,8 +667,10 @@ void writeSettings()
   Log.notice("Conf saved" CR);
   Log.notice("conf.valid %d" CR, conf.valid);
   Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
+  Log.notice("conf.mqtt_server %s" CR, conf.device_name);
   Log.notice("conf.timestamp %d" CR, conf.timestamp);
   Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
+  Log.notice("conf.mqtt_server_length %d" CR, conf.device_name_length);
   Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port);
 }
 
@@ -628,11 +695,14 @@ void readSettings()
       Log.notice("Conf read" CR);      
       Log.notice("conf.valid %d" CR, conf.valid);
       Log.notice("conf.mqtt_server %s" CR, conf.mqtt_server);
+      Log.notice("conf.mqtt_server %s" CR, conf.device_name);
       Log.notice("conf.timestamp %d" CR, conf.timestamp);
       Log.notice("conf.mqtt_server_length %d" CR, conf.mqtt_server_length);
+      Log.notice("conf.mqtt_server_length %d" CR, conf.device_name_length);
       Log.notice("conf.mqtt_port %d" CR, conf.mqtt_port);
   }
 }
+
 
 
 void eraseSettings()
