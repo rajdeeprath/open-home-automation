@@ -44,10 +44,6 @@ String IP;
 boolean inited = false;
 boolean mqtt_connected = false;
 
-
-String PUB_TOPIC = "";
-String SUB_TOPIC = "";
-
 WiFiClient net;
 WiFiManager wifiManager;
 WiFiUDP ntpUDP;
@@ -61,6 +57,8 @@ struct Settings {
   char mqtt_server[50] = "0.0.0.0";
   unsigned int device_name_length = 0;
   char device_name[20] = "smartbell";
+  unsigned int http_port = 80;
+  unsigned int https_port = 443;
   unsigned long timestamp = 0;
   unsigned int reset = 0;
 };
@@ -89,6 +87,51 @@ HTTPClient http;
 WiFiClient espClient;
 MQTTClient client;
 
+
+
+void custom_setup()
+{
+  setupSensors();
+}
+
+
+void custom_loop()
+{
+  readSensor();
+}
+
+
+void setupSensors()
+{
+  pinMode(SOUND_PIN, INPUT);
+}
+
+
+void readSensor()
+{
+  int statusSensor = analogRead(SOUND_PIN);
+  //Log.notice("VAL = %d" CR, statusSensor);
+}
+
+
+
+/**************************************************************************
+ ******************* TEMPLATE METHODS START HERE **************************
+***************************************************************************/
+
+
+void publish_command(const char topic[], const char payload[], boolean requires_ack, unsigned int qos)
+{
+  publish_matter(topic, payload, 1, requires_ack, false, qos);
+}
+
+
+void publish_data(const char topic[], const char payload[], boolean requires_ack, boolean retain, unsigned int qos)
+{
+  publish_matter(topic, payload, 0, requires_ack, retain, qos);
+}
+
+
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
 {
     const byte* p = (const byte*)(const void*)&value;
@@ -109,31 +152,31 @@ template <class T> int EEPROM_readAnything(int ee, T& value)
 }
 
 
-void publish_data(const char topic[], const char payload[])
+void publish_matter(const char topic[], const char payload[])
 {
-  publish_data(topic,payload, 0, false, false, 0);
+  publish_matter(topic,payload, 0, false, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], const unsigned int message_type)
+void publish_matter(const char topic[], const char payload[], const unsigned int message_type)
 {
-  publish_data(topic,payload, message_type, false, false, 0);
+  publish_matter(topic,payload, message_type, false, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack)
+void publish_matter(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack)
 {
-  publish_data(topic, payload, message_type, requires_ack, false, 0);
+  publish_matter(topic, payload, message_type, requires_ack, false, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain)
+void publish_matter(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain)
 {
-  publish_data(topic,payload,message_type, requires_ack, retain, 0);
+  publish_matter(topic,payload,message_type, requires_ack, retain, 0);
 }
 
 
-void publish_data(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain, unsigned int qos)
+void publish_matter(const char topic[], const char payload[], const unsigned int message_type, boolean requires_ack, boolean retain, unsigned int qos)
 {
   if(message_counter < MAX_MESSAGES_STORE)
   {
@@ -248,7 +291,7 @@ void cleanUpMessages(unsigned int itemsToClean, unsigned int item_indices[])
     {
       Log.notice("Topic %s message.requires_ack = %d message.ack_received = %d" CR, message.topic, message.requires_ack, message.ack_received);
       Log.trace("Rescheduling message for transmission" CR);
-      publish_data(message.topic, message.msg, message.requires_ack);
+      publish_matter(message.topic, message.msg, message.requires_ack);
     }
   }
 }
@@ -337,6 +380,8 @@ void loadConfiguration()
         deviceNameStr.toCharArray(conf.device_name, deviceNameStr.length() + 1);
 
         conf.mqtt_port = root["data"]["mqtt_port"];
+        //conf.http_port = root["data"]["http_port"];
+        //conf.https_port = root["data"]["https_port"];
         conf.timestamp = root["data"]["timestamp"];
 
         conf.mqtt_server_length = sizeof(conf.mqtt_server);
@@ -468,17 +513,6 @@ void connect() {
 }
 
 
-void setupSensors()
-{
-  pinMode(SOUND_PIN, INPUT);
-}
-
-
-void readSensor()
-{
-  int statusSensor = analogRead (SOUND_PIN);
-  //Log.notice("VAL = %d" CR, statusSensor);
-}
 
 void setup()
 {
@@ -493,9 +527,6 @@ void setup()
   // start eeprom
   EEPROM.begin(EEPROM_LIMIT);
 
-  // init sensors
-  setupSensors();
-
   // Check for reset and do reset routine
   readSettings();
 
@@ -503,6 +534,8 @@ void setup()
     Log.notice("Reset flag detected!" CR);
     doReset();
   }
+
+  custom_setup();
 
   String NAME = generateAPName();
   char APNAME[NAME.length() + 1];
@@ -527,7 +560,7 @@ void declare_online()
   String topic_str = "/status";
   char topic[topic_str.length() + 1];
   topic_str.toCharArray(topic, topic_str.length() + 1);
-  publish_data(topic, payload, 0, false, true, 1);
+  publish_matter(topic, payload, 0, false, true, 1);
 }
 
 
@@ -539,7 +572,7 @@ void declare_offline()
   String topic_str = "/status";
   char topic[topic_str.length() + 1];
   topic_str.toCharArray(topic, topic_str.length() + 1);
-  publish_data(topic, payload, 0, false, true, 1);
+  publish_matter(topic, payload, 0, false, true, 1);
 }
 
 
@@ -552,7 +585,6 @@ void loop() {
   else
   {
     timeClient.update();
-    readSensor();
     
     if (!client.connected()) 
     {
@@ -560,18 +592,20 @@ void loop() {
     }
     else
     {
+      /*
       char payload[] = "{\"msg\":\"hello\"}";
       String topic_str = "";
       char topic[topic_str.length() + 1];
       topic_str.toCharArray(topic, topic_str.length() + 1);
-      publish_data(topic, payload, 0, false, true, 1);
+      publish_matter(topic, payload, 0, false, true, 1);
+      */
       
       client.loop();
       delay(10);
     }
-
-    delay(2000);
+    
     processMessages();
+    custom_loop();
   }
 
 
