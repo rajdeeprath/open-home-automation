@@ -1,7 +1,9 @@
 #include <RCSwitch.h>
 #include <ArduinoLog.h>
+#include <timer.h>
 
 #define BELL_RELAY_PIN 6
+
 
 const unsigned int RFCODE = 73964;
 const unsigned long BELL_PRESS_THRESHOLD = 2000;
@@ -9,22 +11,27 @@ const unsigned long BELL_PRESS_THRESHOLD = 2000;
 boolean BELL_RELAY_ON = false;
 unsigned long last_bell_on = 0;
 
-
+auto timer = timer_create_default();
 RCSwitch mySwitch = RCSwitch();
 
 
 void setup() {
   Serial.begin(9600);
-
   Log.begin(LOG_LEVEL_NOTICE, &Serial);
   
   Log.notice("Initializing...." CR);
+
+  pinMode(BELL_RELAY_PIN, OUTPUT);
+  bell_off();
+  
   mySwitch.enableReceive(0);  // Receiver on interrupt 0 => that is pin #2
 }
 
 
 void loop() 
 {
+  timer.tick();
+  
   if (mySwitch.available()) 
   {  
     int value = mySwitch.getReceivedValue();
@@ -47,14 +54,10 @@ void loop()
       unsigned int bits = mySwitch.getReceivedBitlength();
       unsigned int protocol = mySwitch.getReceivedProtocol();
 
-      if(press_bell_wait_time_over())
+      if(code == RFCODE && protocol == 1 && bits == 24 && !is_bell_on())
       {
-        bell_off();
-
-        if(code == RFCODE && protocol == 1 && bits == 24)
-        {
-          bell_on();
-        }
+        bell_on();
+        timer.in(BELL_PRESS_THRESHOLD, bell_off);
       }
     }
 
@@ -100,6 +103,16 @@ void bell_on()
       BELL_RELAY_ON = true;
       last_bell_on = millis();
   }
+}
+
+
+
+/**
+ * Check if bell relay is on
+ */
+boolean is_bell_on()
+{
+  return BELL_RELAY_ON;
 }
 
 
