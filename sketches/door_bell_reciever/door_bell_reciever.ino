@@ -31,7 +31,7 @@ void loop()
     
     if (value == 0) 
     {
-      Serial.print("Unknown encoding");
+      Log.notice("Unknown encoding" CR);
     } 
     else 
     {
@@ -42,6 +42,20 @@ void loop()
       Serial.print("bit ");
       Serial.print("Protocol: ");
       Serial.println( mySwitch.getReceivedProtocol() );
+
+      unsigned int code = mySwitch.getReceivedValue();
+      unsigned int bits = mySwitch.getReceivedBitlength();
+      unsigned int protocol = mySwitch.getReceivedProtocol();
+
+      if(press_bell_wait_time_over())
+      {
+        bell_off();
+
+        if(code == RFCODE && protocol == 1 && bits == 24)
+        {
+          bell_on();
+        }
+      }
     }
 
     mySwitch.resetAvailable();
@@ -53,7 +67,7 @@ void loop()
  * Is Bell press time over ?. This is needed to simulate bell press.
  * Might vary from bell to bell. Adjust according to need.
  */
-void is_bell_press_time_over()
+boolean press_bell_wait_time_over()
 {
   unsigned int curr = millis();
 
@@ -68,6 +82,8 @@ void is_bell_press_time_over()
   {
       last_bell_on = 0;
   }  
+
+  return false;
 }
 
 
@@ -82,6 +98,7 @@ void bell_on()
       Log.notice("Switching on bell...." CR);
       digitalWrite(BELL_RELAY_PIN, HIGH);
       BELL_RELAY_ON = true;
+      last_bell_on = millis();
   }
 }
 
