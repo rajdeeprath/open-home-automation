@@ -882,7 +882,7 @@ void doMiscTasks()
 void loop()
 {
   dt = clock.getDateTime();
-
+  checkRTC();
   readEnclosureTemperature();
 
   if(!inited)
@@ -927,6 +927,18 @@ void readEnclosureTemperature()
   
 }
 
+
+
+/**
+ * Check rtc
+ **/
+void checkRTC()
+{
+  if(dt.year<2015){
+    error = 1;
+    trackSystemError(error, "RTC Failure");
+  }
+}
 
 
 
@@ -1438,6 +1450,22 @@ void trackSystemError(int &error)
   if(error == 1)
   {
     SYSTEM_ERROR = 1;
+  }
+  else
+  {
+    SYSTEM_ERROR = 0;  
+  }
+}
+
+
+void trackSystemError(int &error, String message)
+{
+  if(error == 1)
+  {
+    if(SYSTEM_ERROR == 0){
+      SYSTEM_ERROR = 1;
+      notifyURL(message, 1);
+    }
   }
   else
   {
