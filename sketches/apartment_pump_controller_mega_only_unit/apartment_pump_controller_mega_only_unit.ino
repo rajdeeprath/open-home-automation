@@ -79,6 +79,7 @@ const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
 const long OVERFLOW_STATE_THRESHOLD = 60000;
 const long SENSOR_TEST_THRESHOLD = 120000;
+const long INDICATOR_TEST_THRESHOLD = 120000;
 
 
 struct Settings {
@@ -165,15 +166,18 @@ boolean stateChanged = false;
 
 dht DHT;
 float temperature;
-boolean useRTCTemperature = false;
+boolean useRTCTemperature = true;
 boolean inited = false;
 long initialReadTime = 0;
 long minInitialSensorReadTime = 15000;
 long minSensorTestReadtime = 15000;
+long minIndicatorTestReadtime = 10000;
 long minHardwareInitializeTime = 20000;
 
 boolean sensorCheck = false;
+boolean indicatorCheck = false;
 long sensorTestTime = 0;
+long indicatorTestTime = 0;
 boolean sensorsInvert = false;
 
 int low, mid, high, pump;
@@ -183,12 +187,14 @@ int invertLow, invertMid, invertHigh, invertPump;
 
 int health = 1;
 boolean SENSOR_TEST_EVENT = false;
+boolean INDICATOR_TEST_EVENT = false;
 boolean RESET_EVENT = false;
 int INSUFFICIENTWATER = 0;
 int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
-
-boolean forcePumpOn = true;
+long lastIndicatorTest = 0;
+boolean forcePumpOn = false;
+boolean isPumpSensorNpN = true;
 int daysRunning = 0;
 int MAX_DAYS_RUNNING = 3;
 int lastRunDay = 0;
@@ -313,7 +319,6 @@ void setup()
 
 
 
-
 void allIndicatorsOn()
 {
   lowLedOn();
@@ -322,7 +327,17 @@ void allIndicatorsOn()
   pumpLedOn();
   systemLedOn();
   blinkAlarm();
-  //beeperOn();
+}
+
+
+void allIndicatorsOff()
+{
+  lowLedOff();
+  midLedOff();
+  highLedOff();
+  pumpLedOff();
+  systemLedOff();
+  alarmOff();
 }
 
 
@@ -702,6 +717,29 @@ String buildWaterLevelMessage(TankState &tankState)
 }
 
 
+void doIndicatorsTest()
+{
+  indicatorCheck = true;
+  indicatorTestTime = millis();
+  
+  Log.notice("Starting indicators test" CR);
+
+  allIndicatorsOn();  
+}
+
+
+
+void cancelIndicatorsTest()
+{
+  indicatorCheck = false;
+  indicatorTestTime = millis();
+
+  Log.notice("Stopping indicators test" CR);
+
+  allIndicatorsOff();
+}
+
+
 
 void doSensorTest()
 {
@@ -754,6 +792,18 @@ void cancelSensorTest()
 }
 
 
+void testIndicators()
+{
+  allIndicatorsOn();
+  
+  if(millis() - indicatorTestTime > minIndicatorTestReadtime)
+  {
+    // cancel test
+    allIndicatorsOff(); 
+  } 
+
+}
+
 
 void testSensors()
 {
@@ -774,7 +824,7 @@ void testSensors()
     normalPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
-
+  
     // change condition after minSensorTestReadtime seconds
     if(millis() - sensorTestTime > minSensorTestReadtime){ 
       invertSensorLevels();      
@@ -799,7 +849,7 @@ void testSensors()
     Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
     
     // change condition after minSensorTestReadtime seconds
-
+    
     if(millis() - sensorTestTime > minSensorTestReadtime)
     {
       // cancel test
@@ -874,7 +924,29 @@ void doMiscTasks()
         doSensorTest();
       }      
     } 
-  }  
+  }
+  /*
+  else if(INDICATOR_TEST_EVENT)
+  {
+    if(currentTimeStamp > 0)
+    {
+      if(currentTimeStamp > lastIndicatorTest)
+      {
+        if(currentTimeStamp - lastIndicatorTest > INDICATOR_TEST_THRESHOLD)
+        {
+          notifyURL("Running indicator test", 0, 1);
+          doIndicatorsTest();
+        }
+      }
+      else
+      {
+        notifyURL("Running indicator test", 0, 1);
+        lastIndicatorTest = currentTimeStamp;
+        doIndicatorsTest();
+      }      
+    } 
+  } 
+  */   
 }
 
 
@@ -947,8 +1019,8 @@ void checkRTC()
  **/
 void evaluateAlarms()
 {
-  // between 5 am and 1 pm or between 5 pm and 7 pm -> pump runs 
-  if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 12) || (dt.hour > 5 && dt.hour < 12) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
+  // between 5 am and 2 pm or between 5 pm and 7 pm -> pump runs 
+  if(((dt.hour == 5 && dt.minute >=30) && dt.hour < 14) || (dt.hour > 5 && dt.hour < 14) || ((dt.hour == 16 && dt.minute >=50) && dt.hour < 19) || (dt.hour >= 17 && dt.hour < 19))
   {
     // turn off emergency flag
     if(EMERGENCY_PUMP_EVENT){
@@ -994,6 +1066,22 @@ void evaluateAlarms()
     }
   }
 
+
+  // Indicator test at 4:45 pm and 4:45 am
+  if((dt.hour == 16 && dt.minute == 45 && dt.second == 0) || (dt.hour == 4 && dt.minute == 45 && dt.second == 0))
+  {
+    if(!INDICATOR_TEST_EVENT){
+      INDICATOR_TEST_EVENT = true;
+    }
+  }
+  else
+  {
+    if(INDICATOR_TEST_EVENT){
+      INDICATOR_TEST_EVENT = false;
+    }
+  }
+  
+
   // reset
   if(daysRunning >= MAX_DAYS_RUNNING){
     if(!RESET_EVENT){
@@ -1024,26 +1112,26 @@ int readSensorAnalogToDigital(int pin)
 
 int readSensor(int pin)
 {
-  // mock delayed change here
-  //long timeSince = millis() - initialReadTime;
+  // for npn sensor invert reading to match our system requirements
+  if(pin == SENSOR_1_DATA && isPumpSensorNpN == true)
+  {
+    int pump = digitalRead(pin);
+    
+    if(pump == 1)
+    {
+      pump = 0;
+    }
+    else if(pump == 0)
+    {
+      pump = 1;
+    }
 
-  /*
-  if(timeSince >= 60000)
-  { 
-    if(pin == SENSOR_1_DATA){
-      return 0;
-    }
-  }  
-  else if(timeSince >= 30000)
-  { 
-    if(pin == SENSOR_2_DATA){
-      return 0;
-    }
+    return pump;
   }
-  */
-
-  
-  return digitalRead(pin);
+  else
+  {
+    return digitalRead(pin);
+  }
 }
 
 
@@ -1220,8 +1308,7 @@ void evaluateTankState()
       else
       {
         pump = readSensor(SENSOR_1_DATA);
-      }
-      
+      }      
     }
 
     Log.trace("=======================================================================" CR);
@@ -1788,17 +1875,18 @@ void dispatchPendingNotification()
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
       Log.trace("Running Notification service" CR);
-        
+      
       posting = true;
+
+      Notification notice;
        
       if (client.connect("iot.flashvisions.com",80)) 
       {
         Log.notice("Connected to server" CR);
         Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
 
-        Notification notice = queue.dequeue();
+        notice = queue.dequeue();        
         notice.send_time = millis();
-
         data = getPostNotificationString(notice);
         
         client.println("POST /index.php HTTP/1.1");
@@ -1811,6 +1899,17 @@ void dispatchPendingNotification()
         client.print(data);
         client.println();
       }
+      else
+      {
+        /* If notification queue is greater than 2 drop messages 
+         * instead of retrying messages -> to prevent filling up memory
+         */
+         
+        if(queue.count() > 2){
+          notice = queue.dequeue();
+        }
+      }
+      
 
       if (client.connected()){
         Log.notice("Disconnecting" CR);
