@@ -5,14 +5,14 @@
 #define sensor A0 // Sharp IR GP2Y0A41SK0F (4-30cm, analog)
 
 
-const int MAX_DISTANCE = 16;
+const int MAX_DISTANCE = 9;
 const int CAPTURE_MIN_DISTANCE = 5;
-const int CAPTURE_MAX_DISTANCE = 9;
+const int CAPTURE_MAX_DISTANCE = 8;
 
 /* we check for 2 seconds */
 const long MIN_SENSOR_CHECK_DELAY = 200; //ms
 const int MAX_SAMPLES = 10;
-const int DISPENSE_WAIT_TIME = 2000; //ms
+const int DISPENSE_WAIT_TIME = 1000; //ms
 const int MAX_DISPENSE_ANGLE = 110;
 
 long currentTimeStamp = 0;
@@ -104,6 +104,10 @@ void collectSample()
   
   proximity = getProximityDistance();    
   lastProximityDistanceCheck = currentTimeStamp;
+
+  if(debug){
+    Log.notice("Proximity %d" CR, proximity);
+  }
 
   ProximitySample sample = {0,0};
   sample.distance = proximity;
