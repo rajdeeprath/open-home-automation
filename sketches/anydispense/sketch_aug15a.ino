@@ -8,11 +8,12 @@
 const int MAX_DISTANCE = 9;
 const int CAPTURE_MIN_DISTANCE = 5;
 const int CAPTURE_MAX_DISTANCE = 8;
+const int DISPENSE_STEP = 2;
 
 /* we check for 2 seconds */
-const long MIN_SENSOR_CHECK_DELAY = 200; //ms
+const long MIN_SENSOR_CHECK_DELAY = 100; //ms
 const int MAX_SAMPLES = 10;
-const int DISPENSE_WAIT_TIME = 1000; //ms
+const int DISPENSE_WAIT_TIME = 500; //ms
 const int MAX_DISPENSE_ANGLE = 110;
 
 long currentTimeStamp = 0;
@@ -208,9 +209,7 @@ void resetDispenserArm()
 
 void softDispense()
 {   
-  int proximityDistance = CAPTURE_MAX_DISTANCE;
-  
-  for (int pos = default_servo_pos; pos <= MAX_DISPENSE_ANGLE; pos += 1) { // goes from 0 degrees to 180 degrees
+  for (int pos = default_servo_pos; pos <= MAX_DISPENSE_ANGLE; pos += DISPENSE_STEP) { // goes from 0 degrees to 180 degrees
     myservo.write(pos);              // tell servo to go to position in variable 'pos'
     delay(15);                       // waits 15ms for the servo to reach the position
 
