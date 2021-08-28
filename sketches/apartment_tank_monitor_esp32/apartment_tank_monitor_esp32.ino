@@ -1,7 +1,11 @@
+#include <Wire.h>
+#include <RTClib.h> // https://github.com/adafruit/RTClib
+#include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
+
 #include <WiFiManager.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include "time.h"
+#include <time.h>
 
 #include <QueueArray.h>
 #include <ArduinoLog.h>
@@ -27,15 +31,11 @@
 #define LED_HIGH 27
 #define LED_SYSTEM 26
 #define LED_PUMP 25
-#define LED_LOW 23
-#define BEEPER 4
+#define LED_LOW 4
+#define BEEPER 23
 #define NOTICE_LIMIT 5
 
 const String NAME="AMU-PC-001";
-
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600;
-const int   daylightOffset_sec = 3600;
 
 String data;
 
@@ -175,9 +175,36 @@ int lastRunDay = 0;
 WiFiManager wm;
 WiFiClient client;
 HTTPClient http;
+RTC_DS3231 rtc;
+DateTime rtctime;
+
+LiquidCrystal_I2C lcd(0x3F, 16, 2);
+
 
 uint64_t chipid;  
 struct tm timeinfo;
+
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 19800;
+const int   daylightOffset_sec = 0;
+
+
+
+void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
+{
+  if(clean){
+    lcd.clear();
+  }
+
+  if(backlit){
+    lcd.backlight(); 
+  }else{
+    lcd.noBacklight();
+  }
+  
+  lcd.setCursor(posx, posy);
+  lcd.print(line);
+}
 
 
 void printLocalTime()
@@ -203,20 +230,51 @@ void setup() {
     
     Log.notice("Preparing to start" CR);
 
+    /* Init LCD */
+    
+    lcd.init();
+    lcd_print("  INITIALIZING ", 0, 0);
+    delay(2000);
+
+
+
+    /* INIT RTC */
+    
+    if (!rtc.begin()) 
+    {
+      Log.notice("Couldn't find RTC" CR);
+      lcd_print(" Couldn't find RTC ", 0, 0);   
+      
+      while (1){
+        Log.notice("Please check RTC" CR);
+        delay(2000);
+      }
+    }
+    else
+    {
+      rtc.adjust(DateTime(__DATE__, __TIME__));
+    } 
+    
+
+
     /* INIT WIFI */
+    
     
     WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
     wm.setConfigPortalBlocking(false);
     
     chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
-    Serial.printf("ESP32 Chip ID = %04X",(uint16_t)(chipid>>32));//print High 2 bytes
-    Serial.printf("%08X\n",(uint32_t)chipid);//print Low 4bytes.
+    //Serial.printf("ESP32 Chip ID = %04X",(uint16_t)(chipid>>32));//print High 2 bytes
+    //Serial.printf("%08X\n",(uint32_t)chipid);//print Low 4bytes.
+    
 
     Log.notice("Attempting to connect to network using saved credentials" CR);    
     if(wm.autoConnect("AutoConnectAP"))
     {
         Log.notice("connected...yeey :)" CR);    
-        configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+        lcd_print(" WIFI CONNECTED ", 0, 0);
+        delay(2000);
+        setTimeByNTP();
         printLocalTime();
     }
     else 
@@ -249,6 +307,25 @@ void setup() {
 
     /* Misc init */  
     initialReadTime = millis(); 
+
+
+    lcd_print("   READY   ", 0, 0, false);
+}
+
+
+
+/**
+ * Reads time from internet and syncs system and RTC clock to it
+ */
+void setTimeByNTP() {
+  struct tm t;
+
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  if (!getLocalTime(&t)) {
+    Serial.println("getLocalTime Error");
+    return;
+  }
+  //rtc.adjust(DateTime(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec));
 }
 
 
