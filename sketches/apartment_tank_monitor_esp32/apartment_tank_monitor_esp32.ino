@@ -10,28 +10,30 @@
 #include <QueueArray.h>
 #include <ArduinoLog.h>
 
-#define SENSOR_1_LEVEL 16
+#define SENSOR_1_LEVEL 4
 #define SENSOR_1_DATA 34
 
 // top sensor
-#define SENSOR_2_LEVEL 17
+#define SENSOR_2_LEVEL 16
 #define SENSOR_2_DATA 35
 
 // middle sensor
-#define SENSOR_3_LEVEL 18 //level - blue | black
+#define SENSOR_3_LEVEL 17 //level - blue | black
 #define SENSOR_3_DATA 36 //data - bluewhite | yellow
 
 // bottom sensor
-#define SENSOR_4_LEVEL 19 //level - greenwhite/white | black
+#define SENSOR_4_LEVEL 18 //level - greenwhite/white | black
 #define SENSOR_4_DATA 39 //data - green | yellow
 
 // indicators
-#define ALARM 33
-#define LED_MID 32
-#define LED_HIGH 27
-#define LED_SYSTEM 26
-#define LED_PUMP 25
-#define LED_LOW 4
+#define ALARM 32
+#define LED_SYSTEM 33
+#define LED_PUMP 13
+
+#define LED_HIGH 25
+#define LED_MID 26
+#define LED_LOW 27
+
 #define BEEPER 23
 #define NOTICE_LIMIT 5
 
@@ -140,6 +142,7 @@ boolean posting;
 boolean stateChanged = false;
 
 
+float temperature;
 boolean inited = false;
 long initialReadTime = 0;
 long minInitialSensorReadTime = 15000;
@@ -207,6 +210,15 @@ void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean
 }
 
 
+
+void lcd_print_sensors(bool backlit=true)
+{
+  char msg[30];
+  sprintf(msg, "Sensors: %d|%d|%d|%d", tankState.pump, tankState.high, tankState.mid, tankState.low);
+  lcd_print(msg, 0, 0, backlit);
+}
+
+
 void printLocalTime()
 {  
   if(!getLocalTime(&timeinfo)){
@@ -230,61 +242,8 @@ void setup() {
     
     Log.notice("Preparing to start" CR);
 
-    /* Init LCD */
-    
-    lcd.init();
-    lcd_print("  INITIALIZING ", 0, 0);
-    delay(2000);
 
-
-
-    /* INIT RTC */
-    
-    if (!rtc.begin()) 
-    {
-      Log.notice("Couldn't find RTC" CR);
-      lcd_print(" Couldn't find RTC ", 0, 0);   
-      
-      while (1){
-        Log.notice("Please check RTC" CR);
-        delay(2000);
-      }
-    }
-    else
-    {
-      rtc.adjust(DateTime(__DATE__, __TIME__));
-    } 
-    
-
-
-    /* INIT WIFI */
-    
-    
-    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
-    wm.setConfigPortalBlocking(false);
-    
-    chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
-    //Serial.printf("ESP32 Chip ID = %04X",(uint16_t)(chipid>>32));//print High 2 bytes
-    //Serial.printf("%08X\n",(uint32_t)chipid);//print Low 4bytes.
-    
-
-    Log.notice("Attempting to connect to network using saved credentials" CR);    
-    if(wm.autoConnect("AutoConnectAP"))
-    {
-        Log.notice("connected...yeey :)" CR);    
-        lcd_print(" WIFI CONNECTED ", 0, 0);
-        delay(2000);
-        setTimeByNTP();
-        printLocalTime();
-    }
-    else 
-    {
-        Log.notice("Config portal running" CR);        
-    }
-
-    /* INIT PINS */
-    pinMode(BEEPER, OUTPUT);
-    digitalWrite(BEEPER, LOW);
+    /* INIT PINS */   
 
     // pump sensor
     pinMode(SENSOR_1_LEVEL, OUTPUT);//level
@@ -302,14 +261,90 @@ void setup() {
     pinMode(SENSOR_4_LEVEL, OUTPUT);//level
     pinMode(SENSOR_4_DATA, INPUT);//data
 
+
+    // init indicators
+
+    pinMode(LED_LOW, OUTPUT);
+    digitalWrite(LED_LOW, LOW);
+    
+    pinMode(LED_MID, OUTPUT);
+    digitalWrite(LED_MID, LOW);
+    
+    pinMode(LED_HIGH, OUTPUT);
+    digitalWrite(LED_HIGH, LOW);
+    
+    pinMode(LED_SYSTEM, OUTPUT);
+    digitalWrite(LED_SYSTEM, LOW);
+    
+    pinMode(LED_PUMP, OUTPUT);
+    digitalWrite(LED_PUMP, LOW);
+
     pinMode(ALARM, OUTPUT);
     digitalWrite(ALARM, LOW);
 
+    pinMode(BEEPER, OUTPUT);
+    digitalWrite(BEEPER, LOW);
+    
+    
+
+    /* Init LCD */
+    
+    lcd.init();
+    lcd_print("  INITIALIZING ", 0, 0);
+    delay(2000);
+
+
+
+    /* INIT RTC */
+    
+    if (!rtc.begin()) 
+    {
+      Log.notice("RTC Failure" CR);
+      lcd_print(" RTC Failure ", 0, 0); 
+      beeperOn();
+            
+      while(true){ delay(100);}
+    }
+    else
+    {
+      rtc.adjust(DateTime(__DATE__, __TIME__));
+    } 
+    
+
+    /* INIT WIFI */
+    
+    
+    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
+    wm.setConfigPortalBlocking(false);
+    
+    chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
+    char chipid_str[20];
+    sprintf(chipid_str, "ID: %04X%08X", (uint16_t)(chipid>>32), (uint32_t)chipid);
+    lcd_print(chipid_str, 0, 0, false);    
+    delay(2000);
+    
+
+    Log.notice("Attempting to connect to network using saved credentials" CR);    
+    if(wm.autoConnect("AutoConnectAP"))
+    {
+        Log.notice("connected...yeey :)" CR);    
+        lcd_print(" WIFI CONNECTED ", 0, 0);
+        delay(2000);
+        setTimeByNTP();
+        printLocalTime();
+    }
+    else 
+    {
+        Log.notice("Config portal running" CR);        
+    }
+    
+
     /* Misc init */  
-    initialReadTime = millis(); 
+    initialReadTime = millis();
 
-
-    lcd_print("   READY   ", 0, 0, false);
+    lcd_print(" I AM  READY   ", 0, 0, false);
+    
+    lcd_print_sensors(false);
 }
 
 
@@ -325,6 +360,7 @@ void setTimeByNTP() {
     Serial.println("getLocalTime Error");
     return;
   }
+  
   //rtc.adjust(DateTime(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec));
 }
 
@@ -350,6 +386,113 @@ void beeperOff()
 }
 
 
+
+void lowLedOn()
+{
+  if(indicators.low == 0)
+  {
+    digitalWrite(LED_LOW, HIGH);
+    indicators.low = 1;
+  }
+}
+
+
+void lowLedOff()
+{
+  if(indicators.low == 1)
+  {
+    digitalWrite(LED_LOW, LOW);
+    indicators.low = 0;
+  }
+}
+
+
+
+void midLedOn()
+{
+  if(indicators.mid == 0)
+  {
+    digitalWrite(LED_MID, HIGH);
+    indicators.mid = 1;
+  }
+}
+
+
+void midLedOff()
+{
+  if(indicators.mid == 1)
+  {
+    digitalWrite(LED_MID, LOW);
+    indicators.mid = 0;
+  }
+}
+
+
+
+
+void highLedOn()
+{
+  if(indicators.high == 0)
+  {
+    digitalWrite(LED_HIGH, HIGH);
+    indicators.high = 1;
+  }
+}
+
+
+void highLedOff()
+{
+  if(indicators.high == 1)
+  {
+    digitalWrite(LED_HIGH, LOW);
+    indicators.high = 0;
+  }
+}
+
+
+void pumpLedOn()
+{
+  if(indicators.pump == 0)
+  {
+    digitalWrite(LED_PUMP, HIGH);
+    indicators.pump = 1;
+  }
+}
+
+
+void pumpLedOff()
+{
+  if(indicators.pump == 1)
+  {
+    digitalWrite(LED_PUMP, LOW);
+    indicators.pump = 0;
+  }
+}
+
+
+
+void systemLedOn()
+{
+  if(indicators.sys == 0)
+  {
+    digitalWrite(LED_SYSTEM, HIGH);
+    indicators.sys = 1;
+  }
+}
+
+
+void systemLedOff()
+{
+  if(indicators.sys == 1)
+  {
+    digitalWrite(LED_SYSTEM, LOW);
+    indicators.sys = 0;
+  }
+}
+
+
+
+
 void alarmOn()
 {
   if(indicators.alarm == 0)
@@ -370,125 +513,346 @@ void alarmOff()
 }
 
 
+
+void allIndicatorsOn()
+{
+  lowLedOn();
+  midLedOn();
+  highLedOn();
+  pumpLedOn();
+  systemLedOn();
+  //blinkAlarm();
+}
+
+
+void allIndicatorsOff()
+{
+  lowLedOff();
+  midLedOff();
+  highLedOff();
+  pumpLedOff();
+  systemLedOff();
+  //alarmOff();
+}
+
+
+
+/* First read of sensors as soon as system starts */
+void initSensors()
+{
+  // indicate system startup
+  systemLedOn();
+  
+  // initially we read in all sensors  
+  
+  // read bottom sensor
+  tankState.low = readSensor(SENSOR_4_DATA);
+
+  // read middle sensot
+  tankState.mid = readSensor(SENSOR_3_DATA);
+
+  // read top sensot
+  tankState.high = readSensor(SENSOR_2_DATA);
+
+  // read pump sensor
+  tankState.pump = readSensor(SENSOR_1_DATA);
+
+  char msg[30];
+  sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
+  Log.trace("Sensors : %s" CR, msg);
+  
+  // initial read time
+  
+  if(millis() - initialReadTime > minInitialSensorReadTime)
+  {
+      inited = true;
+      Log.notice("Inited : " CR);
+      systemLedOff();
+
+      String message = buildWaterLevelMessage(tankState);
+      
+      //notifyURL("System Reset!\n[" + message + "]", 0, 1);
+
+      doSensorTest();
+  }
+}
+
+
+
+String buildWaterLevelMessage(TankState &tankState)
+{
+  String message = "";
+
+  if(tankState.high == 1)
+  {
+    message = "Water Level @ 100%";
+  }
+  else if(tankState.mid == 1)
+  {
+    message = "Water Level between 50% to 100%";
+  }
+  else if(tankState.low == 1)
+  {
+    message = "Water Level between 10% to 50%";
+  }
+  else
+  {
+    message = "Water Level Critical! (less than 10%)";
+  }
+
+  return message;
+}
+
+
+
+int readSensor(int pin)
+{
+  // for npn sensor invert reading to match our system requirements
+  if(pin == SENSOR_1_DATA && isPumpSensorNpN == true)
+  {
+    int pump = digitalRead(pin);
+    
+    if(pump == 1)
+    {
+      pump = 0;
+    }
+    else if(pump == 0)
+    {
+      pump = 1;
+    }
+
+    return pump;
+  }
+  else
+  {
+    return digitalRead(pin);
+  }
+}
+
+
+
+void doSensorTest()
+{
+  systemLedOn();  
+  sensorCheck = true;
+  uprightSensorLevels();
+  
+}
+
+
+
+void uprightSensorLevels()
+{
+  sensorTestTime = millis();
+  sensorsInvert = false;
+  
+  Log.notice("Starting sensor test" CR);
+
+  digitalWrite(SENSOR_1_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_2_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_3_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_4_LEVEL, HIGH); // level
+}
+
+
+
+void invertSensorLevels()
+{
+  sensorTestTime = millis();
+  sensorsInvert = true;
+
+  Log.notice("Sensor levels inverted" CR);
+      
+  digitalWrite(SENSOR_1_LEVEL, LOW); // level
+  digitalWrite(SENSOR_2_LEVEL, LOW); // level
+  digitalWrite(SENSOR_3_LEVEL, LOW); // level
+  digitalWrite(SENSOR_4_LEVEL, LOW); // level
+}
+
+
+
+void cancelSensorTest()
+{
+  systemLedOff();
+  
+  sensorCheck = false;
+  sensorTestTime = millis();
+  sensorsInvert = false;
+
+  Log.notice("Stopping sensor test" CR);
+  
+  digitalWrite(SENSOR_1_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_2_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_3_LEVEL, HIGH); // level
+  digitalWrite(SENSOR_4_LEVEL, HIGH); // level
+}
+
+
+
+void testSensors()
+{
+  if(!sensorsInvert)
+  {
+    Log.notice("Checking normal sensor states" CR);
+    
+    // read bottom sensor
+    normalLow = readSensor(SENSOR_4_DATA);
+  
+    // read middle sensot
+    normalMid = readSensor(SENSOR_3_DATA);
+  
+    // read top sensot
+    normalHigh = readSensor(SENSOR_2_DATA);
+  
+    // read pump sensor
+    normalPump = readSensor(SENSOR_1_DATA);
+
+    Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
+  
+    // change condition after minSensorTestReadtime seconds
+    if(millis() - sensorTestTime > minSensorTestReadtime){ 
+      invertSensorLevels();      
+    }
+  }
+  else 
+  {
+    Log.notice("Checking invert sensor states" CR);
+    
+    // read bottom sensor
+    invertLow = readSensor(SENSOR_4_DATA);
+  
+    // read middle sensot
+    invertMid = readSensor(SENSOR_3_DATA);
+  
+    // read top sensor
+    invertHigh = readSensor(SENSOR_2_DATA);
+  
+    // read pump sensor
+    invertPump = readSensor(SENSOR_1_DATA);
+
+    Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
+    
+    // change condition after minSensorTestReadtime seconds
+    
+    if(millis() - sensorTestTime > minSensorTestReadtime)
+    {
+      // cancel test
+      cancelSensorTest();  
+
+      // record last test time
+      lastSensorTest = millis();
+
+      // evaluate result
+      if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
+      {
+        health = 1;
+        //forcePumpOn = false;
+      }
+      else
+      {
+        String sensorReport = "Sensors problem detected!";
+        sensorReport = sensorReport + "\n\r";
+        sensorReport = sensorReport + "NL="+normalLow+",IN="+invertLow+",NM="+normalMid+",IM="+invertMid + ",NH="+normalHigh+",IH="+invertHigh+",NP="+normalPump+",IP="+invertPump;
+        
+
+        // pump sensor error
+        if(normalPump==invertPump)
+        {
+          // if error in pump sensor, switch to backup mechanism
+          sensorReport = sensorReport + "\n\r";
+          sensorReport = "Pump sensor error.Switching to backup mechanism";
+          //notifyURL(sensorReport, 1);
+          
+          forcePumpOn = true;
+        }
+        else
+        {
+          health = 0;
+          
+          // if error in any other sensor then halt
+          //notifyURL(sensorReport, 1);
+          
+          beeperOn();
+          systemLedOn();
+        }
+      }
+    }
+  }
+}
+
+
 void loop() {
-    wm.process();
-}
+    wm.process();    
+    
+    rtctime = rtc.now();   
+    temperature = rtc.getTemperature();
+     
+    checkRTCTime(rtctime);
 
-
-
-
-void notifyURL(String message, int error)
-{
-  notifyURL(message, error, 0);
-}
-
-
-void notifyURL(String message, int error, int debug)
-{
-  Log.trace("Preparing notification" CR);
-  
-  Notification notice = {};
-  notice.low = tankState.low;
-  notice.mid = tankState.mid;
-  notice.high = tankState.high;
-  notice.pump = tankState.pump;
-  message.toCharArray(notice.message, 80);
-  notice.queue_time = 0;
-  notice.send_time = 0;
-  notice.health = health;
-  notice.echo = echo;
-  notice.error = error;
-  notice.debug = debug;
-  notice.days_running = daysRunning;
-  //notice.clocktime
-  
-  enqueueNotification(notice);
-}
-
-
-/* Add to Notification queue */
-void enqueueNotification(struct Notification notice)
-{
-   notice.queue_time = millis();
-
-   if(queue.count() < NOTICE_LIMIT){
-    Log.trace("Pushing notification to queue" CR);
-    queue.enqueue(notice);
-   }
-}
-
-
-/**
- * 
- */
-String getPostNotificationString(Notification &notice)
-{
-      String post = "";
-      post+="amu_pc_001=1";
-      post+="&";
-      post+="message="+String(notice.message);
-      post+="&";
-      post+="health="+String(notice.health);
-      post+="&";
-      post+="echo="+String(notice.echo);
-      post+="&";
-      post+="low="+String(notice.low);
-      post+="&";
-      post+="mid="+String(notice.mid);
-      post+="&";
-      post+="high="+String(notice.high);
-      post+="&";
-      post+="pump="+String(notice.pump);
-      post+="&";
-      post+="queue_time="+String(notice.queue_time);
-      post+="&";
-      post+="send_time="+String(notice.send_time);
-      post+="&";
-      post+="error="+String(notice.error);
-      post+="&";
-      post+="debug="+String(notice.debug);
-      post+="&";
-      post+="time=" + String(notice.clocktime);
-      post+="&";
-      post+="days_running=" + String(notice.days_running);     
-
-      return post;
+    if(!inited)
+    {
+      initSensors();  
+    }
+    else if(sensorCheck)
+    {
+      testSensors();
+    }
+    else
+    {
+      if(health == 1)
+      {
+        Log.notice("Health OK" CR);
+      }
+    }
 }
 
 
 
 /**
- * Send http(s) Notification to remote url with appropriate parameters and custom message
- */
-void dispatchPendingNotification()
+ * Check rtc
+ **/
+void checkRTCTime(DateTime dt)
+{
+  if(dt.year()<2015)
+  {
+    error = 1;
+    //trackSystemError(error, "RTC Failure");
+  }
+}
+
+
+
+boolean hasLowChanged()
 {
   currentTimeStamp = millis();
-  if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
-  {    
-    if (!posting && conf.notify == 1 && !queue.isEmpty())
-    {
-      Log.trace("Running Notification service" CR);
-      
-      posting = true;
-      
-      Notification notice;
+  return ((currentTimeStamp - lastLowChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastLowChange > 0);
+}
 
-      Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
 
-      notice = queue.dequeue();        
-      notice.send_time = millis();
-      data = getPostNotificationString(notice);
+boolean hasMidChanged()
+{
+  currentTimeStamp = millis();
+  return ((currentTimeStamp - lastMidChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastMidChange > 0);
+}
 
-      Log.notice("Connecting to server" CR);
-      http.begin(client, server);
-      http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-      int httpResponseCode = http.POST(data);     
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      http.end();
-      
-      posting = false;
-      last_notify = currentTimeStamp;
-    }
-  } 
+
+boolean willOverflow()
+{
+  currentTimeStamp = millis();
+  return ((currentTimeStamp - lastOverflowCondition) > OVERFLOW_STATE_THRESHOLD && lastOverflowCondition > 0);
+}
+
+
+
+boolean hasHighChanged()
+{
+  currentTimeStamp = millis();
+  return ((currentTimeStamp - lastHighChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastHighChange > 0);
+}
+
+
+boolean hasPumpChanged()
+{
+  currentTimeStamp = millis();
+  return ((currentTimeStamp - lastPumpChange) > PUMP_SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
 }
