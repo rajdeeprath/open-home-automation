@@ -6,6 +6,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
+#include <sys/time.h>
+#include <ESP32Time.h>
 
 #include <QueueArray.h>
 #include <ArduinoLog.h>
@@ -72,6 +74,7 @@ const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
 const long OVERFLOW_STATE_THRESHOLD = 60000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
+boolean TIME_SYNCED = false;
 
 
 struct Settings {
@@ -191,6 +194,13 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 19800;
 const int   daylightOffset_sec = 0;
 
+ESP32Time internal_clock;
+
+
+void doReset(){
+ ESP.restart();
+}
+
 
 
 void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
@@ -217,6 +227,31 @@ void lcd_print_sensors(bool backlit=true)
   sprintf(msg, "Sensors: %d|%d|%d|%d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   lcd_print(msg, 0, 0, backlit);
 }
+
+
+void lcd_print_rtc_time(bool backlit=true)
+{
+  rtctime = rtc.now();
+        
+  char time_str[20];
+  sprintf(time_str, "%d/%d/%d %d:%d", rtctime.day(), rtctime.month(), rtctime.year(), rtctime.hour(), rtctime.minute());        
+  lcd_print(time_str, 0, 1, backlit, false);
+}
+
+
+void lcd_print_system_time(bool backlit=true)
+{
+  if(!getLocalTime(&timeinfo)){
+    Log.error("Failed to obtain time" CR);
+    lcd_print("Failed to obtain time", 0, 1, backlit, false);
+    return;
+  }
+
+  char buff[20];
+  sprintf(buff, "%d/%d/%d %d:%d", timeinfo.tm_mday, timeinfo.tm_mon, timeinfo.tm_year, timeinfo.tm_hour, timeinfo.tm_min);        
+  lcd_print(buff, 0, 1, backlit, false);
+}
+
 
 
 void printLocalTime()
@@ -307,7 +342,20 @@ void setup() {
     }
     else
     {
-      rtc.adjust(DateTime(__DATE__, __TIME__));
+      if (rtc.lostPower()) 
+      {
+        Serial.println("RTC lost power, let's set the time!");
+        rtc.adjust(DateTime(__DATE__, __TIME__));
+      }
+      else
+      {
+        //internal_clock.setTime(rtctime.second(), rtctime.minute(), rtctime.hour(), rtctime.day(), rtctime.month(), rtctime.year());
+        TIME_SYNCED = false;
+
+        lcd_print_rtc_time();
+        delay(2000);
+        
+      }
     } 
     
 
@@ -330,13 +378,20 @@ void setup() {
         Log.notice("connected...yeey :)" CR);    
         lcd_print(" WIFI CONNECTED ", 0, 0);
         delay(2000);
-        setTimeByNTP();
-        printLocalTime();
+
+        if(!TIME_SYNCED)
+        {
+          setTimeByNTP();
+          TIME_SYNCED = true;          
+        }        
     }
     else 
     {
         Log.notice("Config portal running" CR);        
     }
+
+
+    printLocalTime();
     
 
     /* Misc init */  
@@ -630,6 +685,229 @@ int readSensor(int pin)
 }
 
 
+/**
+ * Evaluates sensor power state. Method considers 'power saver mode' to intelligently turn sensor on/off to extend life and save more power
+ **/ 
+void evaluateTankState()
+{
+    if(!inited){
+      return;
+    }
+
+    subMessage = "";
+    stateChanged = false;
+    error = 0;
+    
+    // read sensor data
+    low = readSensor(SENSOR_4_DATA);
+    mid = readSensor(SENSOR_3_DATA);
+    high = readSensor(SENSOR_2_DATA);
+
+    // special condition handling
+    if(forcePumpOn)
+    {
+      if(PUMP_EVENT)
+      {
+        pump = 1;
+      }
+      else
+      {
+        pump = 0;
+      }
+    }
+    else
+    {
+      pump = readSensor(SENSOR_1_DATA);
+    } 
+
+    Log.trace("=======================================================================" CR);
+    Log.trace("Sensors : %d | %d | %d | %d" CR, pump, high, mid, low);
+    
+    lcd_print_sensors();
+
+
+    // update low level state
+    if(hasLowChanged())
+    {
+      if(low == 1)
+      {
+        if(pump == 1)
+        {
+          subMessage = "Water Level risen to 10% ";
+        }
+        else if(forcePumpOn)
+        {
+          subMessage = "Water Level risen to 10% (Emergency pump run)";
+          EMERGENCY_PUMP_EVENT = true;
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'low' sensor";
+        }
+      }
+      else
+      {
+        if(mid == 0 && high == 0)
+        {
+          subMessage = "Water Level dropped below 10% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'low' sensor";
+        }
+      }
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.low = low;
+      }
+    }
+
+
+
+    // update mid level state
+    if(hasMidChanged())
+    {
+      if(mid == 1)
+      {
+        if(low == 1 && pump == 1)
+        {
+          subMessage = "Water Level risen to 50% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'mid' sensor";
+        }
+      }
+      else
+      {
+        if(high == 0)
+        {
+          subMessage = "Water Level dropped below 50% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'mid' sensor";
+        }
+      }
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.mid = mid;
+      }
+    }
+
+
+
+    // update high level state
+    if(hasHighChanged())
+    {
+      if(high == 1)
+      {
+        if(low == 1 && mid ==1 && pump ==1)
+        {
+          subMessage = "Water Level risen to 100% ";
+        }
+        else
+        {
+          error = 1;
+          subMessage = "Unexpected state change of 'high' sensor";
+        }
+      }
+      else
+      {
+        subMessage = "Water Level dropped below 100% ";
+      }
+
+      if(error == 0){
+        stateChanged = true;
+        tankState.high = high;
+      }
+    }
+
+
+
+    // update pump level state
+    if(hasPumpChanged())
+    {
+      String levelInfo = buildWaterLevelMessage(tankState);
+      if(pump == 1)
+      {
+        subMessage = "Pump Started!\n[" + levelInfo + "]";
+      }
+      else
+      {
+        subMessage = "Pump Stopped!\n[" + levelInfo + "]";
+      }
+      
+      stateChanged = true;
+      tankState.pump = pump;
+    }
+
+
+    // monitor overflow
+    trackOverFlow(tankState.pump, tankState.high);
+
+    // monitor undrflow
+    trackInsufficientWater(tankState.low, tankState.mid, tankState.high, tankState.pump);
+
+    // track error
+    trackSystemError(error);
+
+    // Indicate change
+    updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
+
+
+    /***************************/ 
+    Log.trace("Sensors : %d | %d | %d | %d" CR, tankState.pump, tankState.high, tankState.mid, tankState.low);
+    Log.trace("=======================================================================" CR);
+    Log.trace("State changed = %T" CR, stateChanged);
+
+
+    // evaluate and dispatch message
+    if(stateChanged)
+    {
+      lcd_print_sensors();
+      
+      String message = "";
+
+      if(subMessage == "")
+      {
+        // evaluate
+        message = buildWaterLevelMessage(tankState);
+
+        // dispatch
+        if(message != "")
+        {
+          if(error == 0)
+          {
+            notifyURL(message);
+          }
+          else
+          {
+            notifyURL(message, 1);
+          }
+        }
+      }
+      else
+      {
+        if(error == 0)
+        {
+          notifyURL(subMessage);
+        }
+        else
+        {
+          notifyURL(subMessage, 1);
+        }
+      }   
+    }
+}
+
+
 
 void doSensorTest()
 {
@@ -640,7 +918,9 @@ void doSensorTest()
 }
 
 
-
+/**
+ * Set upright logic level signal for all sensors (HIGH)
+ */
 void uprightSensorLevels()
 {
   sensorTestTime = millis();
@@ -656,6 +936,9 @@ void uprightSensorLevels()
 
 
 
+/**
+ * Invert logic level signal for all sensors (LOW)
+ */
 void invertSensorLevels()
 {
   sensorTestTime = millis();
@@ -671,6 +954,9 @@ void invertSensorLevels()
 
 
 
+/**
+ * End / cancel sensor test
+ */
 void cancelSensorTest()
 {
   systemLedOff();
@@ -688,7 +974,9 @@ void cancelSensorTest()
 }
 
 
-
+/**
+ * Test sesnors normally first and then by inverting. Inverted lopic level should produce inverted output
+ */
 void testSensors()
 {
   if(!sensorsInvert)
@@ -781,6 +1069,37 @@ void testSensors()
 }
 
 
+/**
+ * Do necessary tasks based on events and flags raised
+ */
+void doMiscTasks()
+{
+  currentTimeStamp = millis();
+  
+  if(SENSOR_TEST_EVENT)
+  {
+    if(currentTimeStamp > 0)
+    {
+      if(currentTimeStamp > lastSensorTest)
+      {
+        if(currentTimeStamp - lastSensorTest > SENSOR_TEST_THRESHOLD)
+        {
+          notifyURL("Running sensor test", 0, 1);
+          doSensorTest();
+        }
+      }
+      else
+      {
+        notifyURL("Running sensor test", 0, 1);
+        lastSensorTest = currentTimeStamp;
+        doSensorTest();
+      }      
+    } 
+  } 
+}
+
+
+
 void loop() {
     wm.process();    
     
@@ -788,6 +1107,7 @@ void loop() {
     temperature = rtc.getTemperature();
      
     checkRTCTime(rtctime);
+    /*
 
     if(!inited)
     {
@@ -802,8 +1122,11 @@ void loop() {
       if(health == 1)
       {
         Log.notice("Health OK" CR);
+        evaluateTankState();
+        doMiscTasks();
       }
     }
+    */
 }
 
 
@@ -819,6 +1142,7 @@ void checkRTCTime(DateTime dt)
     //trackSystemError(error, "RTC Failure");
   }
 }
+
 
 
 
@@ -1151,9 +1475,9 @@ String formatRTCTime(DateTime t)
 {
   String ft = "";
   ft += String(t.day());
-  ft += "-";
+  ft += "/";
   ft += String(t.month());
-  ft += " - ";
+  ft += "/";
   ft += String(t.year());
   ft += " ";
   ft += String(t.hour());
@@ -1164,6 +1488,7 @@ String formatRTCTime(DateTime t)
 
   return ft;
 }
+
 
 
 /* Add to Notification queue */
