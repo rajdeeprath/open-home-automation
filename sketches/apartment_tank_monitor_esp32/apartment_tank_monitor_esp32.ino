@@ -132,7 +132,6 @@ struct Notification {
    char clocktime[100] = "";
 };
 
-char server[] = "iot.flashvisions.com";
 
 QueueArray <Notification> queue;
 Settings conf = {};
@@ -193,6 +192,7 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 19800;
 const int   daylightOffset_sec = 0;
 
+const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
 
 
 
@@ -349,6 +349,7 @@ void setup() {
       else
       {
         rtctime = rtc.now();
+        temperature = rtc.getTemperature();
 
         String timenow = formatRTCTime(rtctime);
         Serial.println(timenow);        
@@ -410,6 +411,8 @@ void setup() {
     lcd_print(" I AM  READY   ", 0, 0, false);
     
     lcd_print_sensors(false);
+
+    notifyURL("System Reset!", 0, 1);
 }
 
 
@@ -1137,6 +1140,8 @@ void loop() {
       }
     }
     */
+
+    dispatchPendingNotification();
 }
 
 
@@ -1448,6 +1453,8 @@ void notifyURL(String message, int error)
 }
 
 
+
+
 /**
  * Generate and push notification with message, error flag and debug flag
  */
@@ -1514,6 +1521,7 @@ void enqueueNotification(struct Notification notice)
 
 
 
+
 /**
  * Prepare notification string object to send to remote server
  */
@@ -1555,6 +1563,7 @@ String getPostNotificationString(Notification &notice)
 
 
 
+
 /**
  * Send http(s) Notification to remote url with appropriate parameters and custom message
  */
@@ -1566,10 +1575,30 @@ void dispatchPendingNotification()
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
       Log.trace("Running Notification service" CR);
-      
-      posting = true;
 
-      // TO DO
+      if(WiFi.status()== WL_CONNECTED)
+      { 
+        posting = true;
+        
+        Notification notice;
+
+        Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
+
+        notice = queue.dequeue();        
+        notice.send_time = millis();
+        data = getPostNotificationString(notice);               
+        http.begin(client, serverName);
+        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+        http.addHeader("Host", "iot.flashvisions.com");
+        http.addHeader("Content-Length", String(data.length()));
+        int httpResponseCode = http.POST(data);       
+        Log.trace("HTTP Response code: %d" CR, httpResponseCode);
+        http.end();
+      }
+      else 
+      {
+        Log.notice("WiFi Disconnected, cannot post data" CR);
+      }
       
       posting = false;
       last_notify = currentTimeStamp;
