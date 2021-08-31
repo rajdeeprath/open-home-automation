@@ -7,7 +7,6 @@
 #include <HTTPClient.h>
 #include <time.h>
 #include <sys/time.h>
-#include <ESP32Time.h>
 
 #include <QueueArray.h>
 #include <ArduinoLog.h>
@@ -194,7 +193,7 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 19800;
 const int   daylightOffset_sec = 0;
 
-ESP32Time internal_clock;
+
 
 
 void doReset(){
@@ -349,11 +348,22 @@ void setup() {
       }
       else
       {
-        //internal_clock.setTime(rtctime.second(), rtctime.minute(), rtctime.hour(), rtctime.day(), rtctime.month(), rtctime.year());
-        TIME_SYNCED = false;
+        rtctime = rtc.now();
+
+        String timenow = formatRTCTime(rtctime);
+        Serial.println(timenow);        
 
         lcd_print_rtc_time();
         delay(2000);
+
+        struct timeval tv;
+        tv.tv_sec=rtctime.unixtime() - 19800;
+
+        settimeofday(&tv, NULL);
+        setenv("TZ", "IST-5:30", 1);
+        tzset();
+
+        TIME_SYNCED = true;
         
       }
     } 
