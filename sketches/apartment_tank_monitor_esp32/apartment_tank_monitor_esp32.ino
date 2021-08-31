@@ -860,6 +860,242 @@ boolean hasPumpChanged()
 
 
 /**
+ * Updates state of indicators/output to end user for monitoring
+ */
+void updateIndicators(int &low, int &mid, int &high, int &pump)
+{
+  // update low indicator
+  if(low == 1)
+  {
+    lowLedOn();
+  }
+  else
+  {
+    lowLedOff();
+  }
+
+
+  // update mid indicator
+  if(mid == 1)
+  {
+    midLedOn();
+  }
+  else
+  {
+    midLedOff();
+  }
+
+
+  // update high indicator
+  if(high == 1)
+  {
+   highLedOn();
+  }
+  else
+  {
+    highLedOff();
+  }
+
+
+  // update high indicator
+  if(pump == 1)
+  {
+    pumpLedOn();
+  }
+  else
+  {
+    if(INSUFFICIENTWATER == 1)
+    {
+      // show indicator
+      //blinkPumpLed();
+    }
+    else
+    {
+      //stop indicator
+      pumpLedOff();
+    }
+  }
+
+
+   if(willOverflow())
+   {
+      if(overFlowAlarmStart == 0){
+        overFlowAlarmStart = currentTimeStamp;
+      }
+
+      if(currentTimeStamp - overFlowAlarmStart < OVERFLOW_ALARM_TIME_THRESHOLD){
+        // start alarm
+        //blinkAlarm();
+      }
+      else
+      {
+        // stop alarm
+        alarmOff();
+      }
+   }
+   else
+   {
+      overFlowAlarmStart = 0;
+      
+      // stop alarm
+      alarmOff();
+   }
+
+
+   // update system sensor
+   if(SYSTEM_ERROR)
+   {
+      //blinkSystemLed();
+      beeperOn();
+   }
+   else
+   {
+      systemLedOff();
+      beeperOff();
+   }
+}
+
+
+
+/**
+ * Track system error
+ */
+void trackSystemError(int &error)
+{
+  if(error == 1)
+  {
+    SYSTEM_ERROR = 1;
+  }
+  else
+  {
+    SYSTEM_ERROR = 0;  
+  }
+}
+
+
+/**
+ * * Track system error with message
+ */
+void trackSystemError(int &error, String message)
+{
+  if(error == 1)
+  {
+    if(SYSTEM_ERROR == 0){
+      SYSTEM_ERROR = 1;
+      notifyURL(message, 1);
+    }
+  }
+  else
+  {
+    SYSTEM_ERROR = 0;  
+  }
+}
+
+
+/**
+ * Track insufficient water state
+ */
+void trackInsufficientWater(int &low, int &mid, int &high, int &pump)
+{
+  if(low == 0 && mid == 0 && high == 0 && pump == 0)
+  {
+    INSUFFICIENTWATER = 1;
+  }
+  else
+  {
+    INSUFFICIENTWATER = 0;
+  }
+}
+
+
+
+/**
+ * Track sensor changes
+ */
+void trackSensorChanges(int &low, int &mid, int &high, int &pump)
+{
+  currentTimeStamp = millis();
+  
+  if(low != tankState.low)
+  {
+    if(lastLowChange == 0)
+    {
+      lastLowChange = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastLowChange = 0;
+  }
+
+
+  if(mid != tankState.mid)
+  {
+    if(lastMidChange == 0)
+    {
+      lastMidChange = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastMidChange = 0;
+  }
+
+
+  if(high != tankState.high)
+  {
+    if(lastHighChange == 0)
+    {
+      lastHighChange = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastHighChange = 0;
+  }
+
+
+  if(pump != tankState.pump)
+  {
+    if(lastPumpChange == 0)
+    {
+      lastPumpChange = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastPumpChange = 0;
+  }
+}
+
+
+
+/**
+ * Track overflow condition
+ */
+void trackOverFlow(int pump, int high)
+{
+  currentTimeStamp = millis();
+  
+  // track overflow
+  if(pump == 1 && high == 1)
+  {
+    Log.trace("Overflow condition" CR);  
+    
+    if(lastOverflowCondition == 0)
+    {
+      lastOverflowCondition = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastOverflowCondition = 0;
+  }
+}
+
+
+
+/**
  * Add to Notification queue
  */
 void notifyURL(String message)
@@ -868,12 +1104,19 @@ void notifyURL(String message)
 }
 
 
+
+/**
+ * Generate and push notification with message, error flag
+ */
 void notifyURL(String message, int error)
 {
   notifyURL(message, error, 0);
 }
 
 
+/**
+ * Generate and push notification with message, error flag and debug flag
+ */
 void notifyURL(String message, int error, int debug)
 {
   Log.trace("Preparing notification" CR);
