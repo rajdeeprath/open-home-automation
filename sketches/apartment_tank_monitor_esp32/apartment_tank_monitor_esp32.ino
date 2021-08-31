@@ -571,7 +571,7 @@ void initSensors()
 
       String message = buildWaterLevelMessage(tankState);
       
-      //notifyURL("System Reset!\n[" + message + "]", 0, 1);
+      notifyURL("System Reset!\n[" + message + "]", 0, 1);
 
       doSensorTest();
   }
@@ -761,7 +761,7 @@ void testSensors()
           // if error in pump sensor, switch to backup mechanism
           sensorReport = sensorReport + "\n\r";
           sensorReport = "Pump sensor error.Switching to backup mechanism";
-          //notifyURL(sensorReport, 1);
+          notifyURL(sensorReport, 1);
           
           forcePumpOn = true;
         }
@@ -770,7 +770,7 @@ void testSensors()
           health = 0;
           
           // if error in any other sensor then halt
-          //notifyURL(sensorReport, 1);
+          notifyURL(sensorReport, 1);
           
           beeperOn();
           systemLedOn();
@@ -855,4 +855,146 @@ boolean hasPumpChanged()
 {
   currentTimeStamp = millis();
   return ((currentTimeStamp - lastPumpChange) > PUMP_SENSOR_STATE_CHANGE_THRESHOLD && lastPumpChange > 0);
+}
+
+
+
+/**
+ * Add to Notification queue
+ */
+void notifyURL(String message)
+{
+  notifyURL(message, 0);
+}
+
+
+void notifyURL(String message, int error)
+{
+  notifyURL(message, error, 0);
+}
+
+
+void notifyURL(String message, int error, int debug)
+{
+  Log.trace("Preparing notification" CR);
+  
+  Notification notice = {};
+  notice.low = tankState.low;
+  notice.mid = tankState.mid;
+  notice.high = tankState.high;
+  notice.pump = tankState.pump;
+  notice.temperature = temperature;
+  message.toCharArray(notice.message, 80);
+  notice.queue_time = 0;
+  notice.send_time = 0;
+  notice.health = health;
+  notice.echo = echo;
+  notice.error = error;
+  notice.debug = debug;
+  notice.days_running = daysRunning;
+
+  String timenow = formatRTCTime(rtctime);
+  timenow.toCharArray(notice.clocktime, timenow.length()+1);
+  
+  enqueueNotification(notice);
+}
+
+
+
+/**
+ * Formats RTC DateTime to readable string
+ */
+String formatRTCTime(DateTime t)
+{
+  String ft = "";
+  ft += String(t.day());
+  ft += "-";
+  ft += String(t.month());
+  ft += " - ";
+  ft += String(t.year());
+  ft += " ";
+  ft += String(t.hour());
+  ft += ":";
+  ft += String(t.minute());
+  ft += ":";
+  ft += String(t.second());
+
+  return ft;
+}
+
+
+/* Add to Notification queue */
+void enqueueNotification(struct Notification notice)
+{
+   notice.queue_time = millis();
+
+   if(queue.count() < NOTICE_LIMIT){
+    Log.trace("Pushing notification to queue" CR);
+    queue.enqueue(notice);
+   }
+}
+
+
+
+/**
+ * Prepare notification string object to send to remote server
+ */
+String getPostNotificationString(Notification &notice)
+{
+      String post = "";
+      post+="amu_pc_001=1";
+      post+="&";
+      post+="message="+String(notice.message);
+      post+="&";
+      post+="health="+String(notice.health);
+      post+="&";
+      post+="echo="+String(notice.echo);
+      post+="&";      
+      post+="temperature="+String(notice.temperature);
+      post+="&";
+      post+="low="+String(notice.low);
+      post+="&";
+      post+="mid="+String(notice.mid);
+      post+="&";
+      post+="high="+String(notice.high);
+      post+="&";
+      post+="pump="+String(notice.pump);
+      post+="&";
+      post+="queue_time="+String(notice.queue_time);
+      post+="&";
+      post+="send_time="+String(notice.send_time);
+      post+="&";
+      post+="error="+String(notice.error);
+      post+="&";
+      post+="debug="+String(notice.debug);
+      post+="&";
+      post+="time=" + String(notice.clocktime);
+      post+="&";
+      post+="days_running=" + String(notice.days_running);     
+
+      return post;
+}
+
+
+
+/**
+ * Send http(s) Notification to remote url with appropriate parameters and custom message
+ */
+void dispatchPendingNotification()
+{
+  currentTimeStamp = millis();
+  if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
+  {    
+    if (!posting && conf.notify == 1 && !queue.isEmpty())
+    {
+      Log.trace("Running Notification service" CR);
+      
+      posting = true;
+
+      // TO DO
+      
+      posting = false;
+      last_notify = currentTimeStamp;
+    }
+  } 
 }
