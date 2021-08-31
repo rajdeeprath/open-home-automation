@@ -1,3 +1,8 @@
+#include <ArduinoRobotMotorBoard.h>
+#include <Multiplexer.h>
+#include <EasyTransfer2.h>
+#include <LineFollow.h>
+
 #include <Wire.h>
 #include <RTClib.h> // https://github.com/adafruit/RTClib
 #include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
@@ -344,7 +349,7 @@ void setup() {
       else
       {
         rtctime = rtc.now();
-        rtc.getTemperature();
+        temperature = rtc.getTemperature();
         
         lcd_print_rtc_time();
         delay(2000);
