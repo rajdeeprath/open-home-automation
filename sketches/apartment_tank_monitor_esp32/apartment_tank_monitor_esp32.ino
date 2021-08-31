@@ -2,7 +2,6 @@
 #include <RTClib.h> // https://github.com/adafruit/RTClib
 #include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
 
-#include <WiFiManager.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <time.h>
@@ -75,6 +74,9 @@ const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
 boolean TIME_SYNCED = false;
 
+const char* ssid = "Tomato24";
+const char* password =  "bhagawadgita@123";
+
 
 struct Settings {
    long lastupdate;
@@ -120,7 +122,7 @@ struct Notification {
    int mid;
    int high;
    int pump;
-   float temperature;
+   float temperature = 0.0;
    int health;
    int echo;
    char message[80] = "";
@@ -143,7 +145,7 @@ boolean posting;
 boolean stateChanged = false;
 
 
-float temperature;
+float temperature = 0.0;
 boolean inited = false;
 long initialReadTime = 0;
 long minInitialSensorReadTime = 15000;
@@ -176,7 +178,6 @@ int daysRunning = 0;
 int MAX_DAYS_RUNNING = 3;
 int lastRunDay = 0;
 
-WiFiManager wm;
 WiFiClient client;
 HTTPClient http;
 RTC_DS3231 rtc;
@@ -263,12 +264,6 @@ void printLocalTime()
 }
 
 
-void resetWiFiconfig()
-{
-  wm.resetSettings();
-}
-
-
 void setup() {
     
     Serial.begin(115200);
@@ -349,11 +344,8 @@ void setup() {
       else
       {
         rtctime = rtc.now();
-        temperature = rtc.getTemperature();
-
-        String timenow = formatRTCTime(rtctime);
-        Serial.println(timenow);        
-
+        rtc.getTemperature();
+        
         lcd_print_rtc_time();
         delay(2000);
 
@@ -368,13 +360,9 @@ void setup() {
         
       }
     } 
-    
 
-    /* INIT WIFI */
-    
-    
-    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
-    wm.setConfigPortalBlocking(false);
+
+    /* GET CHIPID */
     
     chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
     char chipid_str[20];
@@ -383,25 +371,27 @@ void setup() {
     delay(2000);
     
 
-    Log.notice("Attempting to connect to network using saved credentials" CR);    
-    if(wm.autoConnect("AutoConnectAP"))
-    {
-        Log.notice("connected...yeey :)" CR);    
-        lcd_print(" WIFI CONNECTED ", 0, 0);
-        delay(2000);
+    /* INIT WIFI */
 
-        if(!TIME_SYNCED)
-        {
-          setTimeByNTP();
-          TIME_SYNCED = true;          
-        }        
+    Log.notice("Attempting to connect to network using saved credentials" CR);  
+    WiFi.begin(ssid, password); 
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.println("Connecting to WiFi..");
+      lcd_print(" Connecting... ", 0, 0);
     }
-    else 
+   
+    lcd_print(" WIFI CONNECTED ", 0, 0);
+    delay(2000);
+
+    if(!TIME_SYNCED)
     {
-        Log.notice("Config portal running" CR);        
+      setTimeByNTP();
+      TIME_SYNCED = true;          
     }
 
 
+    /* Print synced system time */
     printLocalTime();
     
 
@@ -414,6 +404,7 @@ void setup() {
 
     notifyURL("System Reset!", 0, 1);
 }
+
 
 
 
@@ -1113,15 +1104,12 @@ void doMiscTasks()
 
 
 
-void loop() {
-    wm.process();    
+void loop() {  
     
-    rtctime = rtc.now();   
+    rtctime = rtc.now();
     temperature = rtc.getTemperature();
-     
-    checkRTCTime(rtctime);
+    
     /*
-
     if(!inited)
     {
       initSensors();  
@@ -1132,6 +1120,7 @@ void loop() {
     }
     else
     {
+      evaluateAlarms();
       if(health == 1)
       {
         Log.notice("Health OK" CR);
@@ -1142,6 +1131,7 @@ void loop() {
     */
 
     dispatchPendingNotification();
+    delay(1000);
 }
 
 
@@ -1156,6 +1146,70 @@ void checkRTCTime(DateTime dt)
     error = 1;
     //trackSystemError(error, "RTC Failure");
   }
+}
+
+
+
+
+
+/**
+ * Evaluates the expected alarms
+ **/
+void evaluateAlarms()
+{
+  if(!getLocalTime(&timeinfo))
+  {
+    return;
+  }
+  else
+  {
+    // between 5 am and 2 pm or between 5 pm and 7 pm pump runs 
+    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 19) || (timeinfo.tm_hour >= 17 && timeinfo.tm_hour < 19))
+    {
+      // turn off emergency flag
+      if(EMERGENCY_PUMP_EVENT){
+        EMERGENCY_PUMP_EVENT = false;
+      }
+      
+      if(!PUMP_EVENT){
+        PUMP_EVENT = true;
+        notifyURL("Pump alarm time on", 1);
+      }
+    }
+    else if(EMERGENCY_PUMP_EVENT)
+    {
+      if(!PUMP_EVENT){
+        PUMP_EVENT = true;
+        notifyURL("Pump alarm time on (emergency)", 1);
+      }
+    }
+    else
+    {
+      // if emergency flag not on
+      if(!EMERGENCY_PUMP_EVENT){
+        // no alarms
+        if(PUMP_EVENT){
+          PUMP_EVENT = false;
+          notifyURL("Pump alarm time off", 1);
+        }
+      }
+    }
+  
+  
+    // Sensor test at 3 pm and 3 am
+    if((timeinfo.tm_hour == 15 && timeinfo.tm_min == 0 && timeinfo.tm_sec == 0) || (timeinfo.tm_hour == 3 && timeinfo.tm_min == 0 && timeinfo.tm_sec == 0))
+    {
+      if(!SENSOR_TEST_EVENT){
+        SENSOR_TEST_EVENT = true;
+      }
+    }
+    else
+    {
+      if(SENSOR_TEST_EVENT){
+        SENSOR_TEST_EVENT = false;
+      }
+    }
+  }    
 }
 
 
@@ -1310,6 +1364,7 @@ void trackSystemError(int &error)
     SYSTEM_ERROR = 0;  
   }
 }
+
 
 
 /**
