@@ -1,3 +1,5 @@
+#include <TaskScheduler.h>
+
 #include <Wire.h>
 #include <RTClib.h> // https://github.com/adafruit/RTClib
 #include <LiquidCrystal_I2C.h> // https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
@@ -26,10 +28,9 @@
 #define SENSOR_4_DATA 39 //data - green | yellow
 
 // indicators
-#define ALARM 32
+#define ALARM 19 //32
 #define LED_SYSTEM 33
 #define LED_PUMP 13
-
 #define LED_HIGH 25
 #define LED_MID 26
 #define LED_LOW 27
@@ -196,6 +197,19 @@ const int   daylightOffset_sec = 0;
 const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
 
 
+// methods prototypes
+void dispatchPendingNotification();
+
+
+
+// Tasks
+Task notification_task(1000, TASK_FOREVER, &dispatchPendingNotification);
+
+
+// Scheduler
+Scheduler runner;
+
+
 
 void doReset(){
  ESP.restart();
@@ -344,7 +358,6 @@ void setup() {
       else
       {
         rtctime = rtc.now();
-        temperature = rtc.getTemperature();
         
         lcd_print_rtc_time();
         delay(2000);
@@ -397,11 +410,21 @@ void setup() {
 
     /* Misc init */  
     initialReadTime = millis();
+    lcd_print(" I AM  READY   ", 0, 0, false);    
+    lcd_print_sensors(false);   
 
-    lcd_print(" I AM  READY   ", 0, 0, false);
     
-    lcd_print_sensors(false);
+    /* Prepare scheduler */
 
+    runner.init();
+    Log.notice("Initialized scheduler" CR);
+    
+    runner.addTask(notification_task);
+    Serial.println("added notification_task");
+
+
+    /* Notify start */
+    
     notifyURL("System Reset!", 0, 1);
 }
 
@@ -530,6 +553,66 @@ void pumpLedOff()
 
 
 
+void blinkPumpLed()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastPumpLedUpdate > 2000)
+  {
+    if(indicators.pump == 1)
+    {
+      pumpLedOff();
+    }
+    else if(indicators.pump == 0)
+    {
+      pumpLedOn();
+    }
+    lastPumpLedUpdate = currentTimeStamp;
+  }
+}
+
+
+
+void blinkAlarm()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastAlarmUpdate > 600)
+  {
+    if(indicators.alarm == 1)
+    {
+      alarmOff();
+    }
+    else if(indicators.alarm == 0)
+    {
+      alarmOn();
+    }
+    lastAlarmUpdate = currentTimeStamp;
+  }
+}
+
+
+/*
+void blinkSystemLed()
+{
+  currentTimeStamp = millis();
+  
+  if(currentTimeStamp - lastSystemLedUpdate > 2000)
+  {
+    if(indicators.sys == 1)
+    {
+      systemLedOff();
+    }
+    else if(indicators.sys == 0)
+    {
+      systemLedOn();
+    }
+    lastSystemLedUpdate = currentTimeStamp;
+  }
+}
+*/
+
+
 void systemLedOn()
 {
   if(indicators.sys == 0)
@@ -580,7 +663,7 @@ void allIndicatorsOn()
   highLedOn();
   pumpLedOn();
   systemLedOn();
-  //blinkAlarm();
+  blinkAlarm();
 }
 
 
@@ -591,7 +674,7 @@ void allIndicatorsOff()
   highLedOff();
   pumpLedOff();
   systemLedOff();
-  //alarmOff();
+  alarmOff();
 }
 
 
@@ -1107,7 +1190,6 @@ void doMiscTasks()
 void loop() {  
     
     rtctime = rtc.now();
-    temperature = rtc.getTemperature();
     
     /*
     if(!inited)
@@ -1144,7 +1226,7 @@ void checkRTCTime(DateTime dt)
   if(dt.year()<2015)
   {
     error = 1;
-    //trackSystemError(error, "RTC Failure");
+    trackSystemError(error, "RTC Failure");
   }
 }
 
@@ -1300,7 +1382,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
     if(INSUFFICIENTWATER == 1)
     {
       // show indicator
-      //blinkPumpLed();
+      blinkPumpLed();
     }
     else
     {
@@ -1318,7 +1400,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
 
       if(currentTimeStamp - overFlowAlarmStart < OVERFLOW_ALARM_TIME_THRESHOLD){
         // start alarm
-        //blinkAlarm();
+        blinkAlarm();
       }
       else
       {
@@ -1343,7 +1425,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    }
    else
    {
-      systemLedOff();
+      //systemLedOff();
       beeperOff();
    }
 }
