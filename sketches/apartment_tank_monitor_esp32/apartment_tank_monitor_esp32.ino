@@ -12,20 +12,21 @@
 #include <QueueArray.h>
 #include <ArduinoLog.h>
 
+// pump sensor
 #define SENSOR_1_LEVEL 4
 #define SENSOR_1_DATA 34
 
 // top sensor
-#define SENSOR_2_LEVEL 16
+#define SENSOR_2_LEVEL 18
 #define SENSOR_2_DATA 35
 
 // middle sensor
-#define SENSOR_3_LEVEL 17 //level - blue | black
-#define SENSOR_3_DATA 36 //data - bluewhite | yellow
+#define SENSOR_3_LEVEL 16 //level - blue | black
+#define SENSOR_3_DATA 39 //data - bluewhite | yellow
 
 // bottom sensor
-#define SENSOR_4_LEVEL 18 //level - greenwhite/white | black
-#define SENSOR_4_DATA 39 //data - green | yellow
+#define SENSOR_4_LEVEL 17 //level - greenwhite/white | black
+#define SENSOR_4_DATA 36 //data - green | yellow
 
 // indicators
 #define ALARM 19 //32
@@ -173,7 +174,7 @@ int INSUFFICIENTWATER = 0;
 int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
 long lastIndicatorTest = 0;
-boolean forcePumpOn = false;
+boolean forcePumpOn = true;
 boolean isPumpSensorNpN = true;
 int daysRunning = 0;
 int MAX_DAYS_RUNNING = 3;
@@ -197,17 +198,19 @@ const int   daylightOffset_sec = 0;
 const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
 
 
-// methods prototypes
-void dispatchPendingNotification();
+// methods prototypes / signatures
+void sayHello();
 
 
 
 // Tasks
-Task notification_task(1000, TASK_FOREVER, &dispatchPendingNotification);
+Task hello_task(20000, 2, &sayHello);
+
 
 
 // Scheduler
 Scheduler runner;
+
 
 
 
@@ -235,10 +238,10 @@ void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean
 
 
 
-void lcd_print_sensors(bool backlit=true)
+void lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true)
 {
   char msg[30];
-  sprintf(msg, "Sensors: %d|%d|%d|%d", tankState.pump, tankState.high, tankState.mid, tankState.low);
+  sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
   lcd_print(msg, 0, 0, backlit);
 }
 
@@ -266,6 +269,18 @@ void lcd_print_system_time(bool backlit=true)
   lcd_print(buff, 0, 1, backlit, false);
 }
 
+
+
+void enable_lcd_backlight()
+{
+  lcd.backlight();
+}
+
+
+void disable_lcd_backlight()
+{
+  lcd.noBacklight();
+}
 
 
 void printLocalTime()
@@ -303,6 +318,9 @@ void setup() {
     // bottom sensor
     pinMode(SENSOR_4_LEVEL, OUTPUT);//level
     pinMode(SENSOR_4_DATA, INPUT);//data
+
+
+    normalizeSensorLevels();
 
 
     // init indicators
@@ -358,6 +376,7 @@ void setup() {
       else
       {
         rtctime = rtc.now();
+        temperature = rtc.getTemperature();
         
         lcd_print_rtc_time();
         delay(2000);
@@ -380,7 +399,7 @@ void setup() {
     chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
     char chipid_str[20];
     sprintf(chipid_str, "ID: %04X%08X", (uint16_t)(chipid>>32), (uint32_t)chipid);
-    lcd_print(chipid_str, 0, 0, false);    
+    lcd_print(chipid_str, 0, 0, true);    
     delay(2000);
     
 
@@ -411,22 +430,24 @@ void setup() {
     /* Misc init */  
     initialReadTime = millis();
     lcd_print(" I AM  READY   ", 0, 0, false);    
-    lcd_print_sensors(false);   
+    lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
 
     
     /* Prepare scheduler */
-
-    runner.init();
-    Log.notice("Initialized scheduler" CR);
     
-    runner.addTask(notification_task);
-    Serial.println("added notification_task");
-
-
-    /* Notify start */
-    
-    notifyURL("System Reset!", 0, 1);
+    //runner.init();
+    //Log.notice("Initialized scheduler" CR); 
+       
 }
+
+
+
+
+
+void sayHello(){
+ Log.notice("Hello" CR);
+}
+
 
 
 
@@ -592,7 +613,7 @@ void blinkAlarm()
 }
 
 
-/*
+
 void blinkSystemLed()
 {
   currentTimeStamp = millis();
@@ -610,7 +631,7 @@ void blinkSystemLed()
     lastSystemLedUpdate = currentTimeStamp;
   }
 }
-*/
+
 
 
 void systemLedOn()
@@ -702,6 +723,8 @@ void initSensors()
   char msg[30];
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
+
+  lcd_print("PLEASE WAIT", 0, 1, true, false);
   
   // initial read time
   
@@ -709,6 +732,8 @@ void initSensors()
   {
       inited = true;
       Log.notice("Inited : " CR);
+      lcd_print("INITIALISED!!", 0, 1, true, false);
+      
       systemLedOff();
 
       String message = buildWaterLevelMessage(tankState);
@@ -810,7 +835,7 @@ void evaluateTankState()
     Log.trace("=======================================================================" CR);
     Log.trace("Sensors : %d | %d | %d | %d" CR, pump, high, mid, low);
     
-    lcd_print_sensors();
+    lcd_print_sensors(pump, high, mid, low, false);
 
 
     // update low level state
@@ -958,7 +983,7 @@ void evaluateTankState()
     // evaluate and dispatch message
     if(stateChanged)
     {
-      lcd_print_sensors();
+      lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
       
       String message = "";
 
@@ -996,24 +1021,30 @@ void evaluateTankState()
 
 
 
+/* Start a full sensor test */
 void doSensorTest()
 {
   systemLedOn();  
-  sensorCheck = true;
-  uprightSensorLevels();
   
+  sensorCheck = true;
+  sensorTestTime = millis();
+  
+  Log.notice("Starting sensor test" CR);
+  lcd_print("SENSOR TEST", 0, 1, true, false);
+  
+  normalizeSensorLevels();  
 }
+
 
 
 /**
  * Set upright logic level signal for all sensors (HIGH)
  */
-void uprightSensorLevels()
-{
-  sensorTestTime = millis();
-  sensorsInvert = false;
-  
-  Log.notice("Starting sensor test" CR);
+void normalizeSensorLevels()
+{  
+  sensorsInvert = false;   
+
+   Log.notice("Sensor levels normalized" CR);
 
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -1027,8 +1058,7 @@ void uprightSensorLevels()
  * Invert logic level signal for all sensors (LOW)
  */
 void invertSensorLevels()
-{
-  sensorTestTime = millis();
+{  
   sensorsInvert = true;
 
   Log.notice("Sensor levels inverted" CR);
@@ -1044,20 +1074,17 @@ void invertSensorLevels()
 /**
  * End / cancel sensor test
  */
-void cancelSensorTest()
+void terminateSensorTest()
 {
   systemLedOff();
   
-  sensorCheck = false;
-  sensorTestTime = millis();
+  sensorCheck = false;  
   sensorsInvert = false;
+  sensorTestTime = millis();
 
   Log.notice("Stopping sensor test" CR);
   
-  digitalWrite(SENSOR_1_LEVEL, HIGH); // level
-  digitalWrite(SENSOR_2_LEVEL, HIGH); // level
-  digitalWrite(SENSOR_3_LEVEL, HIGH); // level
-  digitalWrite(SENSOR_4_LEVEL, HIGH); // level
+  normalizeSensorLevels();
 }
 
 
@@ -1083,9 +1110,12 @@ void testSensors()
     normalPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
+    lcd_print_sensors(normalPump, normalHigh, normalMid, normalLow, true);
+    lcd_print("NORMALIZED TEST", 0, 1, true, false);
   
-    // change condition after minSensorTestReadtime seconds
+    // change condition after minSensorTestReadtime seconds (read sensor output for `minSensorTestReadtime` ms)
     if(millis() - sensorTestTime > minSensorTestReadtime){ 
+      sensorTestTime = millis();
       invertSensorLevels();      
     }
   }
@@ -1106,13 +1136,15 @@ void testSensors()
     invertPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
+    lcd_print_sensors(invertPump, invertHigh, invertMid, invertLow, true);
+    lcd_print("INVERTED TEST", 0, 1, true, false);
     
     // change condition after minSensorTestReadtime seconds
     
     if(millis() - sensorTestTime > minSensorTestReadtime)
     {
-      // cancel test
-      cancelSensorTest();  
+      // finish test
+      terminateSensorTest();  
 
       // record last test time
       lastSensorTest = millis();
@@ -1121,6 +1153,7 @@ void testSensors()
       if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
       {
         health = 1;
+        lcd_print("  SENSORS OK  ", 0, 1, true, false);
         //forcePumpOn = false;
       }
       else
@@ -1128,7 +1161,8 @@ void testSensors()
         String sensorReport = "Sensors problem detected!";
         sensorReport = sensorReport + "\n\r";
         sensorReport = sensorReport + "NL="+normalLow+",IN="+invertLow+",NM="+normalMid+",IM="+invertMid + ",NH="+normalHigh+",IH="+invertHigh+",NP="+normalPump+",IP="+invertPump;
-        
+
+        lcd_print(" SENSOR ERROR  ", 0, 0, true, true);
 
         // pump sensor error
         if(normalPump==invertPump)
@@ -1189,9 +1223,9 @@ void doMiscTasks()
 
 void loop() {  
     
-    rtctime = rtc.now();
+    rtctime = rtc.now();;
     
-    /*
+    
     if(!inited)
     {
       initSensors();  
@@ -1205,12 +1239,11 @@ void loop() {
       evaluateAlarms();
       if(health == 1)
       {
-        Log.notice("Health OK" CR);
+        Log.trace("Health OK" CR);
         evaluateTankState();
         doMiscTasks();
       }
     }
-    */
 
     dispatchPendingNotification();
     delay(1000);
@@ -1245,8 +1278,10 @@ void evaluateAlarms()
   }
   else
   {
+    //Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+    
     // between 5 am and 2 pm or between 5 pm and 7 pm pump runs 
-    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 19) || (timeinfo.tm_hour >= 17 && timeinfo.tm_hour < 19))
+    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 20) || (timeinfo.tm_hour >= 17 && timeinfo.tm_hour < 20))
     {
       // turn off emergency flag
       if(EMERGENCY_PUMP_EVENT){
@@ -1420,7 +1455,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    // update system sensor
    if(SYSTEM_ERROR)
    {
-      //blinkSystemLed();
+      blinkSystemLed();
       beeperOn();
    }
    else
@@ -1458,6 +1493,7 @@ void trackSystemError(int &error, String message)
   {
     if(SYSTEM_ERROR == 0){
       SYSTEM_ERROR = 1;
+      lcd_print("SYSTEM ERROR", 0, 1, true, true);
       notifyURL(message, 1);
     }
   }
