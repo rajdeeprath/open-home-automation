@@ -71,7 +71,7 @@ const long OVERFLOW_ALARM_TIME_THRESHOLD = 60000;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
-const long OVERFLOW_STATE_THRESHOLD = 60000;
+const long OVERFLOW_STATE_THRESHOLD = 120000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
 boolean TIME_SYNCED = false;
@@ -1051,7 +1051,7 @@ void normalizeSensorLevels()
 {  
   sensorsInvert = false;   
 
-   Log.notice("Sensor levels normalized" CR);
+  Log.notice("Sensor levels normalized" CR);
 
   digitalWrite(SENSOR_1_LEVEL, HIGH); // level
   digitalWrite(SENSOR_2_LEVEL, HIGH); // level
@@ -1174,12 +1174,15 @@ void testSensors()
         // pump sensor error
         if(normalPump==invertPump)
         {
-          // if error in pump sensor, switch to backup mechanism
-          sensorReport = sensorReport + "\n\r";
-          sensorReport = "Pump sensor error.Switching to backup mechanism";
-          notifyURL(sensorReport, 1);
-          
-          forcePumpOn = true;
+          if(forcePumpOn == false)
+          {
+            // if error in pump sensor, switch to backup mechanism
+            sensorReport = sensorReport + "\n\r";
+            sensorReport = "Pump sensor error.Switching to backup mechanism";
+            notifyURL(sensorReport, 1);
+            
+            forcePumpOn = true;
+          }
         }
         else
         {
@@ -1778,7 +1781,8 @@ void dispatchPendingNotification()
       }
       else 
       {
-        Log.notice("WiFi Disconnected, cannot post data" CR);
+        Log.error("WiFi not connected, cannot post data" CR);
+        lcd_print("WIFI DISCONNECTED", 0, 1, true, true);
       }
       
       posting = false;
