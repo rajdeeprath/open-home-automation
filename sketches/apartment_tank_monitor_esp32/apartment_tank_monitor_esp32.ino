@@ -724,7 +724,7 @@ void initSensors()
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
 
-  lcd_print("PLEASE WAIT", 0, 1, true, false);
+  lcd_print("WARMING UP", 0, 1, true, false);
   
   // initial read time
   
@@ -835,7 +835,9 @@ void evaluateTankState()
     Log.trace("=======================================================================" CR);
     Log.trace("Sensors : %d | %d | %d | %d" CR, pump, high, mid, low);
     
-    lcd_print_sensors(pump, high, mid, low, false);
+        
+    // detect change
+    trackSensorChanges(low, mid, high, pump);   
 
 
     // update low level state
@@ -849,7 +851,7 @@ void evaluateTankState()
         }
         else if(forcePumpOn)
         {
-          subMessage = "Water Level risen to 10% (Emergency pump run)";
+          subMessage = "Water Level dropped to 10% (Emergency pump run)";
           EMERGENCY_PUMP_EVENT = true;
         }
         else
@@ -974,10 +976,15 @@ void evaluateTankState()
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
 
 
+    // print tank state to lcd 
+    lcd_print_sensors(pump, high, mid, low, false);
+
+
     /***************************/ 
     Log.trace("Sensors : %d | %d | %d | %d" CR, tankState.pump, tankState.high, tankState.mid, tankState.low);
     Log.trace("=======================================================================" CR);
     Log.trace("State changed = %T" CR, stateChanged);
+
 
 
     // evaluate and dispatch message
@@ -1229,6 +1236,7 @@ void loop() {
     if(!inited)
     {
       initSensors();  
+      //allIndicatorsOn();
     }
     else if(sensorCheck)
     {
