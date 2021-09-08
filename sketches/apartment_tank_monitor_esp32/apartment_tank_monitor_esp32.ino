@@ -1,3 +1,4 @@
+#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <TaskScheduler.h>
 
 #include <Wire.h>
@@ -71,7 +72,7 @@ const long OVERFLOW_ALARM_TIME_THRESHOLD = 60000;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
-const long OVERFLOW_STATE_THRESHOLD = 120000;
+const long OVERFLOW_STATE_THRESHOLD = 300000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
 boolean TIME_SYNCED = false;
@@ -187,6 +188,8 @@ DateTime rtctime;
 
 LiquidCrystal_I2C lcd(0x3F, 16, 2);
 
+WiFiManager wm;
+
 
 uint64_t chipid;  
 struct tm timeinfo;
@@ -286,14 +289,24 @@ void disable_lcd_backlight()
 void printLocalTime()
 {  
   if(!getLocalTime(&timeinfo)){
-    Serial.println("Failed to obtain time");
+    Log.notice("Failed to obtain time");
     return;
   }
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
 }
 
 
+//gets called when WiFiManager enters configuration mode
+void configModeCallback (WiFiManager *myWiFiManager) {
+  lcd_print("  CONFIG MODE  ", 0, 1);
+  Serial.println(WiFi.softAPIP());
+  Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
+
 void setup() {
+
+    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
     
     Serial.begin(115200);
     Log.begin(LOG_LEVEL_NOTICE, &Serial);
@@ -405,7 +418,35 @@ void setup() {
 
     /* INIT WIFI */
 
+    wm.setConfigPortalBlocking(false);
+    wm.setAPCallback(configModeCallback);
+    wm.setConfigPortalTimeout(180);
+    
+
     Log.notice("Attempting to connect to network using saved credentials" CR);  
+    Log.notice("Connecting to WiFi..");
+    lcd_print(" Connecting... ", 0, 0);
+    
+    
+    if(wm.autoConnect("AMU-PC-001", "iot@123"))
+    {
+      Log.notice("Connected to WiFi");
+      lcd_print(" WIFI CONNECTED ", 0, 0);
+      delay(2000);
+
+      if(!TIME_SYNCED)
+      {
+        setTimeByNTP();
+        TIME_SYNCED = true;          
+      }
+    }
+    else {
+        Log.notice("Configportal running");
+        lcd_print(" CONFIG MODE ", 0, 0);
+    }
+    
+
+    /*
     WiFi.begin(ssid, password); 
     while (WiFi.status() != WL_CONNECTED) {
       delay(500);
@@ -415,12 +456,8 @@ void setup() {
    
     lcd_print(" WIFI CONNECTED ", 0, 0);
     delay(2000);
+    */
 
-    if(!TIME_SYNCED)
-    {
-      setTimeByNTP();
-      TIME_SYNCED = true;          
-    }
 
 
     /* Print synced system time */
@@ -1232,8 +1269,9 @@ void doMiscTasks()
 
 
 void loop() {  
-    
-    rtctime = rtc.now();;
+
+    wm.process();
+    rtctime = rtc.now();
     
     
     if(!inited)
@@ -1602,9 +1640,7 @@ void trackOverFlow(int pump, int high)
   
   // track overflow
   if(pump == 1 && high == 1)
-  {
-    Log.trace("Overflow condition" CR);  
-    
+  {    
     if(lastOverflowCondition == 0)
     {
       lastOverflowCondition = currentTimeStamp;
