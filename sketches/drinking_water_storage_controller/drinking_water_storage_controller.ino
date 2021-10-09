@@ -47,9 +47,9 @@ int echo = 1;
 int error = 0;
 
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
-const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
-const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
-const long OVERFLOW_STATE_THRESHOLD = 1000;
+const long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const long OVERFLOW_STATE_THRESHOLD = 5000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 
 boolean sensorCheck = false;
@@ -221,7 +221,7 @@ void setup() {
     }
     else 
     {
-        Log.notice("Configportal running");
+        Log.notice("Config portal running");
     }    
 }
 
@@ -433,21 +433,27 @@ boolean was_sensor_test_done_recently()
 
 
 
-/* First read of sensors as soon as system starts */
-void initSensors()
+/* Initialize settinsg and sensors */
+void initialise()
 {  
-  // read bottom sensor
-  tankState.low = readSensor(BOTTOM_DATA);
+  // read top sensot
+  tankState.pump = isPumpRunning();
 
   // read top sensot
   tankState.high = readSensor(TOP_DATA);
+
+  // read bottom sensor
+  tankState.low = readSensor(BOTTOM_DATA);
+
+  
   // initial read time
   
   if(millis() - initialReadTime > minInitialSensorReadTime)
   {
       inited = true;
-      Log.notice("Inited : " CR);
+      Log.notice("Inited : " CR);      
 
+      initSettings();
       doSensorTest();
   }
 }
@@ -481,8 +487,7 @@ void loop() {
     
     if(!inited)
     {
-      initSensors();  
-      initSettings();      
+      initialise();             
     }
     else if(sensorCheck)
     {
@@ -498,7 +503,7 @@ void loop() {
       }
     }
 
-    dispatchPendingNotification();
+    //dispatchPendingNotification();
     delay(1000);
 }
 
@@ -512,8 +517,8 @@ void takeActions()
     Log.notice("Stopping pump to avoid overflow");
     stopPump();
   }
-  else if(willRunOutOfWaterSoon())
-  {    
+  else if(willRunOutOfWaterSoon() && !isPumpRunning())
+  {   
     if(was_sensor_test_done_recently())
     {
       Log.notice("Running pump to avoid running out of water");
@@ -530,6 +535,19 @@ void takeActions()
 
 
 /**
+ * Check the running status of the pump by reading the acknowledgement pin
+ */
+boolean isPumpRunning()
+{  
+  if(pump == 1){
+    return true;
+  }else{
+    return false;
+  }
+}
+
+
+/**
  * Evaluates realtime state of water storage container
  **/ 
 void evaluateTankState()
@@ -539,19 +557,21 @@ void evaluateTankState()
     error = 0;
     
     // read sensor data
-    low = readSensor(BOTTOM_DATA);
     high = readSensor(TOP_DATA);
+    low = readSensor(BOTTOM_DATA);    
 
     Log.trace("=======================================================================" CR);
-    Log.trace("Sensors : %d | %d" CR, low, high);
+    Log.notice("Sensors : %d | %d | %d" CR, pump, high, low);
   
     // detect change
-    trackSensorChanges(low, high);   
+    trackSensorChanges(low, high, pump);   
   
   
     // update low level state
     if(hasLowChanged())
     {
+      Log.notice("Low changed" CR);
+      
       if(low == 1)
       {
         if(pump == 1)
@@ -587,6 +607,8 @@ void evaluateTankState()
     // update high level state
     if(hasHighChanged())
     {
+      Log.notice("High changed" CR);
+      
       if(high == 1)
       {
         if(low == 1 && pump ==1)
@@ -614,6 +636,8 @@ void evaluateTankState()
     // update pump level state
     if(hasPumpChanged())
     {
+      Log.notice("Pump changed" CR);
+      
       String levelInfo = buildWaterLevelMessage(tankState);
       if(pump == 1)
       {
@@ -768,7 +792,7 @@ void trackInsufficientWater(int &low, int &high, int &pump)
 
 
 
-void trackSensorChanges(int &low, int &high)
+void trackSensorChanges(int &low, int &high, int &pump)
 {
   currentTimeStamp = millis();
   
@@ -796,6 +820,21 @@ void trackSensorChanges(int &low, int &high)
   {
     lastHighChange = 0;
   }
+
+
+  /*
+  if(pump != tankState.pump)
+  {
+    if(lastPumpChange == 0)
+    {
+      lastPumpChange = currentTimeStamp;
+    }
+  }
+  else
+  {
+    lastPumpChange = 0;
+  }
+  */
 }
 
 
@@ -807,7 +846,7 @@ void trackOverFlow(int pump, int high)
   // track overflow
   if(pump == 1 && high == 1)
   {
-    Log.trace("Overflow condition" CR);  
+    Log.notice("Overflow condition" CR);  
     
     if(lastOverflowCondition == 0)
     {
@@ -1306,11 +1345,13 @@ void stopPump()
  */
 void initSettings()
 {
+  Log.notice("init Settings" CR);
+  
   readSettings();
   
   if (conf.timestamp<1) 
   {
-    Log.trace("Setting defaults" CR);
+    Log.notice("Setting defaults" CR);
     
     String url = "0.0.0.0";
     char tmp[url.length() + 1];
