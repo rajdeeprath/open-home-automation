@@ -19,6 +19,7 @@
 #define NOTICE_LIMIT 5
 
 WiFiManager wm;
+WiFiEventHandler gotIpEventHandler, disconnectedEventHandler;
 std::unique_ptr<ESP8266WebServer> server;
 
 boolean inited = false;
@@ -179,7 +180,7 @@ boolean isRelayOn()
 
 void setup() {
 
-  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
+    WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP 
     
     Serial.begin(115200);
     Log.begin(LOG_LEVEL_NOTICE, &Serial);
@@ -204,6 +205,17 @@ void setup() {
 
 
     /* INIT WIFI */
+
+    gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
+    {
+      Log.notice("Station connected, IP: ");
+      Serial.println(WiFi.localIP());
+    });
+    
+    disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected & event)
+    {
+      Log.notice("Station disconnected!");
+    });
 
     wm.setConfigPortalBlocking(false);
     wm.setAPCallback(configModeCallback);
@@ -504,7 +516,7 @@ void loop() {
       }
     }
 
-    //dispatchPendingNotification();
+    dispatchPendingNotification();
     delay(1000);
 }
 
