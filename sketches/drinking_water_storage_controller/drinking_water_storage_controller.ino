@@ -19,7 +19,7 @@
 #define NOTICE_LIMIT 5
 
 WiFiManager wm;
-
+std::unique_ptr<ESP8266WebServer> server;
 
 boolean inited = false;
 long initialReadTime = 0;
@@ -29,11 +29,15 @@ long minSensorTestReadtime = 15000;
 const String NAME="AQUA-P-001";
 const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
 
-
+String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Drinking Water storage Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String switch1state;
 String subMessage;
 String data;
 
 boolean PUMP_EVENT = false;
+boolean LIQUID_LEVEL_OK = false;
+boolean PUMP_RUN_REQUEST_TOKEN = false;
+long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 long last_notify = 0;
 long currentTimeStamp;
 boolean systemFault;
@@ -79,6 +83,10 @@ struct TankState {
 
 
 struct Settings {
+  int relay;
+  int relay_runtime;
+  long relay_start;
+  long relay_stop;
   int notify = 1;
   long timestamp;
   int endpoint_length;
@@ -115,6 +123,54 @@ void configModeCallback (WiFiManager *myWiFiManager)
 {
   Serial.println(WiFi.softAPIP());
   Serial.println(myWiFiManager->getConfigPortalSSID());
+}
+
+
+
+
+/**
+ * Switches off relay(s)
+ */
+void switchOffRelay()
+{
+    Log.notice("Turning off relay");
+    
+    conf.relay=0;
+    conf.relay_stop = millis();
+    digitalWrite(RELAY_SWITCH, HIGH);
+}
+
+
+
+/**
+ * Switches on relay(s)
+ */
+void switchOnRelay()
+{
+    Log.notice("Turning on relay");
+  
+    conf.relay=1;
+    conf.relay_start = millis();
+    digitalWrite(RELAY_SWITCH, LOW);
+}
+
+
+
+/**
+ * Checks composite relay state by reading the control pin(s). Both relays are required to switch the device on.
+ */
+boolean isRelayOn()
+{
+  int relay_state = digitalRead(RELAY_SWITCH);
+
+  if(relay_state == 1)
+  {
+    return true;
+  }
+  else
+  {   
+    return false;
+  }
 }
 
 
@@ -160,11 +216,38 @@ void setup() {
     {
       Log.notice("Connected to WiFi");
       delay(2000);
+      
+      init_server();
     }
     else 
     {
         Log.notice("Configportal running");
-    }
+    }    
+}
+
+
+
+void init_server()
+{
+  server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
+
+  server->on("/", handleRoot);
+  server->on("/reset", handleReset);
+  server->on("/switch/1", readSwitch);
+  server->on("/switch/1/set", toggleSwitch);
+  server->on("/switch/1/set/on", switchAOn);
+  server->on("/switch/1/set/off", switchAOff);
+  server->on("/switch/1/runtime", getSwitchRuntime);
+  server->on("/switch/1/runtime/set", setSwitchRuntime);
+  server->on("/notify", getNotify);
+  server->on("/notify/set", setNotify);
+  server->on("/notify/url", getNotifyURL);
+  server->on("/notify/url/set", setNotifyURL);
+  
+  server->onNotFound(handleNotFound);
+  server->begin();
+  
+  Log.notice("HTTP server started" CR);
 }
 
 
@@ -686,6 +769,305 @@ void trackOverFlow(int pump, int high)
 
 
 
+void checkAndRespondToRelayConditionSafeGuard()
+{
+  if(!LIQUID_LEVEL_OK)
+  {
+     server->send(400, "text/plain", "LIQUID_LEVEL_OK=FALSE");
+     return;
+  }
+}
+
+
+
+/**
+ * Handle root visit
+ */
+void handleRoot() {
+  server->send(200, "application/json", capabilities);
+}
+
+
+
+
+/**
+ * Handle reset request
+ */
+void handleReset() 
+{
+  conf.reset = 1;
+  writeSettings();
+  server->send(200, "text/plain", "Resetting in 5 seconds");
+}
+
+
+
+
+/**
+ * Handle non existent path
+ */
+void handleNotFound() {
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server->uri();
+  message += "\nMethod: ";
+  message += (server->method() == HTTP_GET) ? "GET" : "POST";
+  message += "\nArguments: ";
+  message += server->args();
+  message += "\n";
+  for (uint8_t i = 0; i < server->args(); i++) {
+    message += " " + server->argName(i) + ": " + server->arg(i) + "\n";
+  }
+  server->send(404, "text/plain", message);
+}
+
+
+
+
+/**
+ * Gets pump runtime
+ */
+void getSwitchRuntime()
+{
+  int runtime;
+
+  readSettings();
+
+  runtime = conf.relay_runtime;
+
+  if(runtime > 0)
+  {
+    server->send(200, "text/plain", "RUNTIME=" + String(runtime));
+  }
+  else
+  {
+    server->send(400, "text/plain", "Invalid runtime value");
+  }
+}
+
+
+
+
+/**
+ * Sets pump runtime in seconds
+ */
+void setSwitchRuntime()
+{
+  int runtime;
+
+  if(server->hasArg("time"))
+  {
+    runtime = String(server->arg("time")).toInt();
+
+    if(runtime > 0)
+    {
+      conf.relay_runtime = runtime;
+      
+      server->send(200, "text/plain", "RUNTIME=" + String(conf.relay_runtime));
+      writeSettings();
+    }
+    else
+    {
+      server->send(400, "text/plain", "Invalid runtime value");
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No value provided");
+  }
+  
+  
+}
+
+
+
+/**
+ * Reads pump switch state
+ */
+void readSwitch()
+{
+  if(conf.relay == 0)
+  {
+    switch1state="STATE=OFF";
+  }
+  else
+  {
+    switch1state="STATE=ON";
+  }
+
+  server->send(200, "text/plain", switch1state);
+}
+
+
+
+
+/**
+ * Toggles pump state
+ */
+void toggleSwitch()
+{
+  checkAndRespondToRelayConditionSafeGuard();
+
+  if(conf.relay == 0)
+  {
+    PUMP_RUN_REQUEST_TOKEN = true;
+    
+    runPump();
+    switch1state="STATE=ON";
+  }
+  else
+  {
+    stopPump();
+    switch1state="STATE=OFF";
+  }
+
+  server->send(200, "text/plain", switch1state);
+}
+
+
+
+
+
+/**
+ * Requests swutching the pump on
+ */
+void switchAOn()
+{
+  checkAndRespondToRelayConditionSafeGuard();
+  
+  if(conf.relay == 0)
+  {
+    PUMP_RUN_REQUEST_TOKEN = true;
+    runPump();
+  }
+    
+  server->send(200, "text/plain", "STATE=ON");
+}
+
+
+
+
+/**
+ * Requests swutching the pump off
+ */
+void switchAOff()
+{
+  checkAndRespondToRelayConditionSafeGuard();
+  stopPump();
+
+  server->send(200, "text/plain", "STATE=OFF");
+}
+
+
+
+
+/**
+ * Gets the http(s) Notification permission
+ */
+void getNotify()
+{
+  readSettings();
+
+  int notify = conf.notify;
+  server->send(200, "text/plain", "NOTIFY=" + String(notify));
+}
+
+
+
+
+/**
+ * Sets the http(s) Notification permission
+ */
+void setNotify()
+{
+  int notify;
+
+  if (server->hasArg("notify"))
+  {
+    notify = String(server->arg("notify")).toInt();
+
+    if (notify == 0 || notify == 1)
+    {
+      conf.notify = notify;
+      writeSettings();
+      server->send(200, "text/plain", "NOTIFY=" + String(conf.notify));      
+    }
+    else
+    {
+      server->send(400, "text/plain", "Invalid notify value");
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No value provided");
+  }
+}
+
+
+
+/**
+ * Gets the http(s) Notification url endpoint
+ */
+void getNotifyURL()
+{
+  String url;
+
+  readSettings();
+
+  url = conf.endpoint;
+
+  if (url.length() < 4)
+  {
+    server->send(400, "text/plain", "Invalid url value");
+  }
+  else
+  {
+    server->send(200, "text/plain", "URL=" + url);
+  }
+}
+
+
+
+
+/**
+ * Sets the http(s) Notification url endpoint
+ */
+void setNotifyURL()
+{
+  String url;
+
+  if (server->hasArg("url"))
+  {
+    url = String(server->arg("url"));
+
+    if (url.length() < 4)
+    {
+      server->send(400, "text/plain", "Invalid url value");
+    }
+    else
+    {
+      char tmp[url.length() + 1];
+      url.toCharArray(tmp, url.length() + 1);
+
+      conf.endpoint_length = url.length();
+
+      memset(conf.endpoint, 0, sizeof(conf.endpoint));
+      strncpy(conf.endpoint, tmp, strlen(tmp));
+
+      writeSettings();
+      
+      server->send(200, "text/plain", "url=" + url);
+    }
+  }
+  else
+  {
+    server->send(400, "text/plain", "No value provided");
+  }
+}
+
+
+
+
 
 
 /**
@@ -818,6 +1200,52 @@ void dispatchPendingNotification()
 
 
 
+/**
+ * Start the pump operation by switching on the relay
+ */
+void runPump()
+{
+   String msg;
+
+   if(conf.relay == 0)
+   {
+      if(millis() - conf.relay_start > CONSECUTIVE_PUMP_RUN_DELAY)
+      {
+        Log.notice("Starting pump!" CR);
+        switchOnRelay();
+      }
+      else
+      {
+        msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
+        //Log.notice(msg);
+        notifyURL(msg);
+      }
+   }
+   else
+   {
+        msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
+        //Log.error(msg);
+        notifyURL(msg);
+   }
+}
+
+
+
+/**
+ * Stops pump by switching off the relay
+ */
+void stopPump()
+{
+  if(conf.relay == 1)
+  { 
+    Log.notice("Stopping pump!" CR);
+    switchOffRelay();
+  }
+}
+
+
+
+
 void initSettings()
 {
   readSettings();
@@ -837,6 +1265,8 @@ void initSettings()
     conf.notify = 0;
   }
 
+  LIQUID_LEVEL_OK = true;
+
   // save settings
   writeSettings();
 }
@@ -848,15 +1278,23 @@ void writeSettings()
   eeAddress = 0;
   conf.timestamp = millis();
 
+  EEPROM.write(eeAddress, conf.relay);
+  eeAddress++;  
+  EEPROM.write(eeAddress, conf.relay_runtime);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.relay_start);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.relay_stop);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.reset);
+  eeAddress++;
   EEPROM.write(eeAddress, conf.notify);
   eeAddress++;
   EEPROM.write(eeAddress, conf.timestamp);
   eeAddress++;
   EEPROM.write(eeAddress, conf.endpoint_length);
   eeAddress++;
-  EEPROM.write(eeAddress, conf.reset);  
-
-  eeAddress++;
+  
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
   EEPROM.commit();
@@ -880,13 +1318,21 @@ void readSettings()
 {
   eeAddress = 0;
 
+  conf.relay = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.relay_runtime = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.relay_start = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.relay_stop = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.reset = EEPROM.read(eeAddress);
+  eeAddress++;
   conf.notify = EEPROM.read(eeAddress);
   eeAddress++;
   conf.timestamp = EEPROM.read(eeAddress);
   eeAddress++;
   conf.endpoint_length = EEPROM.read(eeAddress);
-  eeAddress++;
-  conf.reset = EEPROM.read(eeAddress);
 
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
