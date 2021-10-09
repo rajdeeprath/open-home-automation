@@ -49,7 +49,7 @@ int error = 0;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 60000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
-const long OVERFLOW_STATE_THRESHOLD = 300000;
+const long OVERFLOW_STATE_THRESHOLD = 1000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 
 boolean sensorCheck = false;
@@ -416,12 +416,26 @@ void testSensors()
 }
 
 
+/**
+ * Check to see if full sensor test was recently done or not
+ */
+boolean was_sensor_test_done_recently()
+{
+  if(lastSensorTest > 0 && (millis() - lastSensorTest > 5000))
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }  
+}
+
 
 
 /* First read of sensors as soon as system starts */
 void initSensors()
-{
-  
+{  
   // read bottom sensor
   tankState.low = readSensor(BOTTOM_DATA);
 
@@ -480,6 +494,7 @@ void loop() {
       {
         Log.trace("Health OK" CR);
         evaluateTankState();
+        takeActions();
       }
     }
 
@@ -487,6 +502,30 @@ void loop() {
     delay(1000);
 }
 
+
+
+
+void takeActions()
+{
+  if(willOverflow())
+  {
+    Log.notice("Stopping pump to avoid overflow");
+    stopPump();
+  }
+  else if(willRunOutOfWaterSoon())
+  {    
+    if(was_sensor_test_done_recently())
+    {
+      Log.notice("Running pump to avoid running out of water");
+      runPump();
+    }
+    else
+    {
+      Log.notice("Checking sensors before running pump");
+      doSensorTest();
+    }
+  }
+}
 
 
 
@@ -647,6 +686,20 @@ boolean hasLowChanged()
 {
   currentTimeStamp = millis();
   return ((currentTimeStamp - lastLowChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastLowChange > 0);
+}
+
+
+
+boolean willRunOutOfWaterSoon()
+{
+  if(INSUFFICIENTWATER == 1)
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
 
@@ -1213,18 +1266,19 @@ void runPump()
       {
         Log.notice("Starting pump!" CR);
         switchOnRelay();
+        pump = 1;
       }
       else
       {
         msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
-        //Log.notice(msg);
+        Log.notice("%s" CR, msg);
         notifyURL(msg);
       }
    }
    else
    {
         msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
-        //Log.error(msg);
+        Log.error("%s" CR, msg);
         notifyURL(msg);
    }
 }
@@ -1240,12 +1294,16 @@ void stopPump()
   { 
     Log.notice("Stopping pump!" CR);
     switchOffRelay();
+    pump = 0;
   }
 }
 
 
 
 
+/**
+ * Initialize application settings. read eeprom to see if this is first run. if yes write with defaults.
+ */
 void initSettings()
 {
   readSettings();
@@ -1273,6 +1331,10 @@ void initSettings()
 
 
 
+
+/**
+ * Write settings object to eeprom
+ */
 void writeSettings()
 {
   eeAddress = 0;
@@ -1304,6 +1366,11 @@ void writeSettings()
 
 
 
+
+
+/**
+ * Write a string to eeprom starting at {startAdr}
+ */
 void writeEEPROM(int startAdr, int len, char* writeString) {
   //yield();
   for (int i = 0; i < len; i++) {
@@ -1313,7 +1380,9 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
 
 
 
-
+/**
+ * Read settings object from eeprom
+ */
 void readSettings()
 {
   eeAddress = 0;
@@ -1342,6 +1411,9 @@ void readSettings()
 
 
 
+/**
+ * Read a string from eeprom
+ */
 void readEEPROM(int startAdr, int maxLength, char* dest) {
 
   for (int i = 0; i < maxLength; i++) {
@@ -1350,6 +1422,10 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
 }
 
 
+
+/**
+ * Erases eeprom data by writing zeros
+ */
 void eraseSettings()
 {
   Log.notice("Erasing eeprom" CR);  
