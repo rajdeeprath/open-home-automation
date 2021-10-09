@@ -23,8 +23,8 @@ std::unique_ptr<ESP8266WebServer> server;
 
 boolean inited = false;
 long initialReadTime = 0;
-long minInitialSensorReadTime = 15000;
-long minSensorTestReadtime = 15000;
+long minInitialSensorReadTime = 10000;
+long minSensorTestReadtime = 10000;
 
 const String NAME="AQUA-P-001";
 const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
@@ -46,6 +46,7 @@ boolean debug = false;
 int echo = 1;
 int error = 0;
 
+const long SENSOR_RECENT_TEST_THRESHOLD = 60000;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 const long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
 const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 5000;
@@ -133,7 +134,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
  */
 void switchOffRelay()
 {
-    Log.notice("Turning off relay");
+    Log.trace("Turning off relay");
     
     conf.relay=0;
     conf.relay_stop = millis();
@@ -147,7 +148,7 @@ void switchOffRelay()
  */
 void switchOnRelay()
 {
-    Log.notice("Turning on relay");
+    Log.trace("Turning on relay");
   
     conf.relay=1;
     conf.relay_start = millis();
@@ -421,7 +422,7 @@ void testSensors()
  */
 boolean was_sensor_test_done_recently()
 {
-  if(lastSensorTest > 0 && (millis() - lastSensorTest > 5000))
+  if(lastSensorTest > 0 && (millis() - lastSensorTest <= SENSOR_RECENT_TEST_THRESHOLD))
   {
     return true;
   }
@@ -514,20 +515,26 @@ void takeActions()
 {
   if(willOverflow())
   {
-    Log.notice("Stopping pump to avoid overflow");
-    stopPump();
-  }
-  else if(willRunOutOfWaterSoon() && !isPumpRunning())
-  {   
-    if(was_sensor_test_done_recently())
+    if(isPumpRunning())
     {
-      Log.notice("Running pump to avoid running out of water");
-      runPump();
+      Log.trace("Stopping pump to avoid overflow");
+      stopPump();
     }
-    else
+  }
+  else if(willRunOutOfWaterSoon())
+  {   
+    if(!isPumpRunning())
     {
-      Log.notice("Checking sensors before running pump");
-      doSensorTest();
+      if(was_sensor_test_done_recently())
+      {
+        Log.notice("Running pump to avoid running out of water");
+        runPump();
+      }
+      else
+      {
+        Log.notice("Checking sensors before running pump");
+        doSensorTest();
+      }
     }
   }
 }
@@ -822,7 +829,6 @@ void trackSensorChanges(int &low, int &high, int &pump)
   }
 
 
-  /*
   if(pump != tankState.pump)
   {
     if(lastPumpChange == 0)
@@ -834,7 +840,6 @@ void trackSensorChanges(int &low, int &high, int &pump)
   {
     lastPumpChange = 0;
   }
-  */
 }
 
 
@@ -846,7 +851,7 @@ void trackOverFlow(int pump, int high)
   // track overflow
   if(pump == 1 && high == 1)
   {
-    Log.notice("Overflow condition" CR);  
+    Log.trace("Overflow condition" CR);  
     
     if(lastOverflowCondition == 0)
     {
@@ -1345,7 +1350,7 @@ void stopPump()
  */
 void initSettings()
 {
-  Log.notice("init Settings" CR);
+  Log.trace("init Settings" CR);
   
   readSettings();
   
