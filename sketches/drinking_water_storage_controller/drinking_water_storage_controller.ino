@@ -1,4 +1,3 @@
-
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -49,12 +48,27 @@ long lastIndicatorTest = 0;
 boolean isPumpSensorNpN = true;
 
 
+const int EEPROM_LIMIT = 512;
+int eeAddress = 0;
+
+
 struct TankState {
    int low = 0;
    int high = 0;
    long lastupdate = 0;
 };
 
+
+struct Settings {
+  int notify = 1;
+  long timestamp;
+  int endpoint_length;
+  int reset = 0;
+  char endpoint[50] = "";
+};
+
+
+Settings conf = {};
 TankState tankState = {};
 
 
@@ -134,7 +148,7 @@ void relay_switch_off()
 
 int readSensor(int pin)
 {  
-  if(pin == TOP_DATA && isPumpSensorNpN == true)
+  if(pin == BOTTOM_DATA && isPumpSensorNpN == true)
   {
     int state = digitalRead(pin);
     
@@ -310,6 +324,7 @@ void loop() {
     if(!inited)
     {
       initSensors();  
+      initSettings();      
     }
     else if(sensorCheck)
     {
@@ -323,6 +338,102 @@ void loop() {
       }
     }
 
-    //dispatchPendingNotification();
+
     delay(1000);
+}
+
+
+
+
+void initSettings()
+{
+  readSettings();
+  
+  if (conf.timestamp<1) 
+  {
+    Log.trace("Setting defaults" CR);
+    
+    String url = "0.0.0.0";
+    char tmp[url.length() + 1];
+    url.toCharArray(tmp, url.length() + 1);
+
+    conf.endpoint_length = url.length();
+    memset(conf.endpoint, 0, sizeof(conf.endpoint));
+    strncpy(conf.endpoint, tmp, strlen(tmp));
+    
+    conf.notify = 0;
+  }
+
+  // save settings
+  writeSettings();
+}
+
+
+
+void writeSettings()
+{
+  eeAddress = 0;
+  conf.timestamp = millis();
+
+  EEPROM.write(eeAddress, conf.notify);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.timestamp);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.endpoint_length);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.reset);  
+
+  eeAddress++;
+  writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
+
+  EEPROM.commit();
+
+  Log.notice("Conf saved" CR);
+}
+
+
+
+void writeEEPROM(int startAdr, int len, char* writeString) {
+  //yield();
+  for (int i = 0; i < len; i++) {
+    EEPROM.write(startAdr + i, writeString[i]);
+  }
+}
+
+
+
+
+void readSettings()
+{
+  eeAddress = 0;
+
+  conf.notify = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.timestamp = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.endpoint_length = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.reset = EEPROM.read(eeAddress);
+
+  eeAddress++;
+  readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
+
+  Log.notice("Conf read" CR);
+}
+
+
+
+void readEEPROM(int startAdr, int maxLength, char* dest) {
+
+  for (int i = 0; i < maxLength; i++) {
+    dest[i] = char(EEPROM.read(startAdr + i));
+  }
+}
+
+
+void eraseSettings()
+{
+  Log.notice("Erasing eeprom" CR);  
+  for (int i = 0; i < EEPROM_LIMIT; i++)
+    EEPROM.write(i, 0);
 }
