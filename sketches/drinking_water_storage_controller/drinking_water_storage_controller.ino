@@ -15,6 +15,9 @@
 #define BOTTOM_DATA 12 //D6
 
 #define RELAY_SWITCH 13 //D7
+#define BEEPER 0 //D3
+
+
 
 #define NOTICE_LIMIT 5
 
@@ -57,6 +60,7 @@ const long SENSOR_TEST_THRESHOLD = 120000;
 boolean sensorCheck = false;
 long sensorTestTime = 0;
 boolean sensorsInvert = false;
+boolean BEEPING = false;
 
 int low, high, pump;
 long lastLowChange, lastHighChange, lastPumpChange, lastOverflowCondition;
@@ -86,9 +90,9 @@ struct TankState {
 
 struct Settings {
   int relay;
-  int relay_runtime;
-  long relay_start;
-  long relay_stop;
+  int relay_runtime = 0;
+  long relay_start = 0;
+  long relay_stop = 0;
   int notify = 1;
   long timestamp;
   int endpoint_length;
@@ -158,6 +162,30 @@ void switchOnRelay()
 
 
 
+void switchOffBeeper()
+{
+  if(BEEPING == true)
+  {
+    Log.trace("Turning off beeper");
+    digitalWrite(BEEPER, LOW);
+    BEEPING = false;
+  }
+}
+
+
+
+void switchOnBeeper()
+{
+  if(BEEPING == false)
+  {
+    Log.trace("Turning on beeper");
+    digitalWrite(BEEPER, HIGH);
+    BEEPING = true;
+  }
+}
+
+
+
 /**
  * Checks composite relay state by reading the control pin(s). Both relays are required to switch the device on.
  */
@@ -201,7 +229,11 @@ void setup() {
     normalizeSensorLevels();
 
     pinMode(RELAY_SWITCH, OUTPUT);
-    relay_switch_off();
+    switchOffRelay();
+
+    // Beeper
+    pinMode(BEEPER, OUTPUT);    
+    switchOffBeeper();
 
 
     /* INIT WIFI */
@@ -256,29 +288,13 @@ void init_server()
   server->on("/notify/set", setNotify);
   server->on("/notify/url", getNotifyURL);
   server->on("/notify/url/set", setNotifyURL);
+  server->on("/portal", requestPortal);
   
   server->onNotFound(handleNotFound);
   server->begin();
   
   Log.notice("HTTP server started" CR);
 }
-
-
-
-void relay_switch_on()
-{
-  Log.notice("Switching on relay" CR);
-  digitalWrite(RELAY_SWITCH, LOW);
-}
-
-
-void relay_switch_off()
-{
-  Log.notice("Switching off relay" CR);
-  digitalWrite(RELAY_SWITCH, HIGH);
-}
-
-
 
 
 int readSensor(int pin)
@@ -525,30 +541,39 @@ void loop() {
 
 void takeActions()
 {
-  if(willOverflow())
+  if(SYSTEM_ERROR == 1)
   {
-    if(isPumpRunning())
-    {
-      Log.trace("Stopping pump to avoid overflow");
-      stopPump();
-    }
+    switchOnBeeper();
   }
-  else if(willRunOutOfWaterSoon())
-  {   
-    if(!isPumpRunning())
+  else
+  {
+    switchOffBeeper();
+
+    if(willOverflow())
     {
-      if(was_sensor_test_done_recently())
+      if(isPumpRunning())
       {
-        Log.notice("Running pump to avoid running out of water");
-        runPump();
-      }
-      else
-      {
-        Log.notice("Checking sensors before running pump");
-        doSensorTest();
+        Log.trace("Stopping pump to avoid overflow");
+        stopPump();
       }
     }
-  }
+    else if(willRunOutOfWaterSoon())
+    {   
+      if(!isPumpRunning())
+      {
+        if(was_sensor_test_done_recently())
+        {
+          Log.notice("Running pump to avoid running out of water");
+          runPump();
+        }
+        else
+        {
+          Log.notice("Checking sensors before running pump");
+          doSensorTest();
+        }
+      }
+    }
+    }  
 }
 
 
@@ -1176,6 +1201,13 @@ void setNotifyURL()
 
 
 
+/**
+ * Request portal
+ */
+void requestPortal()
+{
+  wm.startWebPortal();
+}
 
 
 
@@ -1362,7 +1394,7 @@ void stopPump()
  */
 void initSettings()
 {
-  Log.trace("init Settings" CR);
+  Log.trace("init Settings" CR); 
   
   readSettings();
   
