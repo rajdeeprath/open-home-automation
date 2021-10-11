@@ -521,7 +521,6 @@ void initialise()
 
       
       String message = buildWaterLevelMessage(tankState);      
-      conf.notify = 1;
       notifyURL("System Reset!\n[" + message + "]", 0, 1);
       
       doSensorTest();
@@ -1459,7 +1458,7 @@ void initSettings()
   {
     Log.notice("Setting defaults" CR);
     
-    String url = "0.0.0.0";
+    String url = "iot.flashvisions.com";
     char tmp[url.length() + 1];
     url.toCharArray(tmp, url.length() + 1);
 
@@ -1467,7 +1466,7 @@ void initSettings()
     memset(conf.endpoint, 0, sizeof(conf.endpoint));
     strncpy(conf.endpoint, tmp, strlen(tmp));
     
-    conf.notify = 0;
+    conf.notify = 1;
   }
 
   LIQUID_LEVEL_OK = true;
@@ -1484,6 +1483,8 @@ void initSettings()
  */
 void writeSettings()
 {
+  EEPROM.begin(512);
+  
   eeAddress = 0;
   conf.timestamp = millis();
 
@@ -1507,6 +1508,7 @@ void writeSettings()
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
   EEPROM.commit();
+  EEPROM.end();
 
   Log.notice("Conf saved" CR);
 }
@@ -1532,6 +1534,8 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
  */
 void readSettings()
 {
+  EEPROM.begin(512);
+  
   eeAddress = 0;
 
   conf.relay = EEPROM.read(eeAddress);
@@ -1552,6 +1556,8 @@ void readSettings()
 
   eeAddress++;
   readEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
+
+  EEPROM.end();
 
   Log.notice("Conf read" CR);
 }
@@ -1575,7 +1581,13 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
  */
 void eraseSettings()
 {
+  EEPROM.begin(512);
+  
   Log.notice("Erasing eeprom" CR);  
-  for (int i = 0; i < EEPROM_LIMIT; i++)
+  for (int i = 0; i < EEPROM_LIMIT; i++){
     EEPROM.write(i, 0);
+  }
+
+  EEPROM.commit();
+  EEPROM.end();
 }
