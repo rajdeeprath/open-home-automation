@@ -32,10 +32,11 @@ long initialReadTime = 0;
 long minInitialSensorReadTime = 10000;
 long minSensorTestReadtime = 10000;
 
-const String NAME="AQUA-P-001";
-const char* serverName = "http://iot.flashvisions.com/?amu_pc_001=1";
+const char* APNAME="AQUA-001";
+const char* AP_PASS="iotpassword";
+const char* serverName = "http://iot.flashvisions.com";
 
-String capabilities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Drinking Water storage Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String capabilities = "{\"name\":\"" + String(APNAME) + "\",\"devices\":{\"name\":\"Drinking Water storage Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 String switch1state;
 String subMessage;
 String data;
@@ -49,8 +50,10 @@ long currentTimeStamp;
 boolean systemFault;
 boolean beeping;
 boolean debug = false;
+boolean network = false;
 int echo = 1;
 int error = 0;
+
 
 const long SENSOR_RECENT_TEST_THRESHOLD = 60000;
 const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
@@ -136,6 +139,8 @@ Task t1(1000, TASK_FOREVER, &coreTask);
 Scheduler runner;
 
 
+
+
 void configModeCallback (WiFiManager *myWiFiManager) 
 {
   Serial.println(WiFi.softAPIP());
@@ -173,6 +178,9 @@ void switchOnRelay()
 
 
 
+/**
+ * Turn off beeper
+ */
 void switchOffBeeper()
 {
   if(BEEPING == true)
@@ -185,6 +193,9 @@ void switchOffBeeper()
 
 
 
+/**
+ * Turn on beeper
+ */
 void switchOnBeeper()
 {
   if(BEEPING == false)
@@ -251,14 +262,18 @@ void setup() {
 
     gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
     {
+      network = true;
       Log.notice("Station connected, IP: ");
       Serial.println(WiFi.localIP());
+      init_server();
     });
     
     disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected & event)
     {
+      network = true;
       Log.notice("Station disconnected!");
     });
+
 
     wm.setConfigPortalBlocking(false);
     wm.setAPCallback(configModeCallback);
@@ -268,16 +283,13 @@ void setup() {
     Log.notice("Connecting to WiFi..");
     
     
-    if(wm.autoConnect("AQUA-P-001", "iot@123"))
+    boolean wm_connected = wm.autoConnect(APNAME, AP_PASS);
+    if(wm_connected)
     {
-      Log.notice("Connected to WiFi");
-      delay(2000);
-      
-      init_server();
-    }
-    else 
+      network = true;
+    }else
     {
-        Log.notice("Config portal running");
+      network = false;
     }
 
     
@@ -506,6 +518,12 @@ void initialise()
       Log.notice("Inited : " CR);      
 
       initSettings();
+
+      
+      String message = buildWaterLevelMessage(tankState);      
+      conf.notify = 1;
+      notifyURL("System Reset!\n[" + message + "]", 0, 1);
+      
       doSensorTest();
   }
 }
@@ -566,6 +584,11 @@ void coreTask()
 void loop() {
     runner.execute();
     wm.process();    
+
+    if(WiFi.status()== WL_CONNECTED)
+    {
+      server->handleClient();
+    }
 }
 
 
@@ -1291,7 +1314,8 @@ void enqueueNotification(struct Notification notice)
 {
    notice.queue_time = millis();
 
-   if(queue.count() < NOTICE_LIMIT){
+   // if no network then no need to enque notifications
+   if(network && queue.count() < NOTICE_LIMIT){
     Log.trace("Pushing notification to queue" CR);
     queue.enqueue(notice);
    }
@@ -1306,7 +1330,7 @@ void enqueueNotification(struct Notification notice)
 String getPostNotificationString(Notification &notice)
 {
       String post = "";
-      post+="amu_pc_001=1";
+      post+= "aqua_001=1";
       post+="&";
       post+="message="+String(notice.message);
       post+="&";
