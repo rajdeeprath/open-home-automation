@@ -1,3 +1,5 @@
+#include <TaskScheduler.h>
+
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -123,6 +125,15 @@ boolean stateChanged = false;
 
 Settings conf = {};
 TankState tankState = {};
+
+
+// Callback methods prototypes
+void coreTask();
+
+//Tasks
+Task t1(1000, TASK_FOREVER, &coreTask);
+
+Scheduler runner;
 
 
 void configModeCallback (WiFiManager *myWiFiManager) 
@@ -267,7 +278,19 @@ void setup() {
     else 
     {
         Log.notice("Config portal running");
-    }    
+    }
+
+    
+    runner.init();
+    Log.notice("Initialized scheduler");
+    
+    runner.addTask(t1);
+    Log.notice("Added core task to scheduler");
+    
+    delay(5000);
+    
+    t1.enable();
+    Log.notice("Enabled task t1");
 }
 
 
@@ -510,35 +533,45 @@ String buildWaterLevelMessage(TankState &tankState)
 }
 
 
-void loop() {  
 
-    wm.process();    
-    
-    if(!inited)
+/**
+ * Core function
+ */
+void coreTask()
+{
+  Log.trace("Core task running" CR);
+  
+  if(!inited)
+  {
+    initialise();             
+  }
+  else if(sensorCheck)
+  {
+    testSensors();
+  }
+  else
+  {
+    if(health == 1)
     {
-      initialise();             
+      Log.trace("Health OK" CR);
+      evaluateTankState();
+      takeActions();
     }
-    else if(sensorCheck)
-    {
-      testSensors();
-    }
-    else
-    {
-      if(health == 1)
-      {
-        Log.trace("Health OK" CR);
-        evaluateTankState();
-        takeActions();
-      }
-    }
-
-    dispatchPendingNotification();
-    delay(1000);
+  }
+  
+  dispatchPendingNotification();
 }
 
 
+void loop() {
+    runner.execute();
+    wm.process();    
+}
 
 
+/**
+ * actions to be taken based on system state
+ */
 void takeActions()
 {
   if(SYSTEM_ERROR == 1)
