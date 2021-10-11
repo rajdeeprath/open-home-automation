@@ -41,7 +41,8 @@ String data;
 
 boolean PUMP_EVENT = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
-boolean TANK_NOT_FULL = true;
+boolean TANK_FULL = false;
+boolean SAFE_TO_RUN_PUMP = false;
 boolean systemFault = false;
 boolean beeping = false;
 boolean debug = false;
@@ -56,7 +57,7 @@ const unsigned long OVERFLOW_STATE_THRESHOLD = 5000;
 const unsigned long SENSOR_TEST_THRESHOLD = 120000;
 const unsigned long minInitialSensorReadTime = 10000;
 const unsigned long minSensorTestReadtime = 10000;
-
+const unsigned long TANK_FILLING_TIME_GAP = 120000;
 unsigned long initialReadTime = 0;
 unsigned long last_notify = 0;
 unsigned long time_over_check;
@@ -305,6 +306,8 @@ void setup() {
     
     t1.enable();
     Log.notice("Enabled task t1" CR);
+
+    //eraseSettings();
 }
 
 
@@ -507,20 +510,34 @@ void relayConditionSafeGuard()
   currentTimeStamp = millis();
  
   /* prove that tank was not full recently (less than a day) or is not full right now */
+
+  SAFE_TO_RUN_PUMP = true;
+
+  if(!TANK_FULL)
+  {
+    // if it has been less than 2 minutes since tank was full. it cannot be very low yet!!
+    if(currentTimeStamp - lastTankFullDetect < TANK_FILLING_TIME_GAP && lastTankFullDetect > 0)
+    {
+      Log.notice("Tank was recently full. Probably not the best time to run pump again!!");
+      SAFE_TO_RUN_PUMP = false;
+    }
+  }
   
 
   /* If time over of liquid level recently full then stop */
-  time_over_check = millis();
 
-  if(conf.relay == 1)
+  if(isPumpRunning())
   {
     max_runtime = conf.relay_runtime * 1000;
-    timeover = ((time_over_check - conf.relay_start) > max_runtime);
+    timeover = ((currentTimeStamp - conf.relay_start) > max_runtime);
+
+    Log.trace("currentTimeStamp - conf.relay_start = %d" CR, (currentTimeStamp - conf.relay_start));
+    Log.trace("SAFE_TO_RUN_PUMP = %d | timeover = %d" CR, SAFE_TO_RUN_PUMP, timeover);
     
-    if(!TANK_NOT_FULL || timeover)
-    {      
-      stopPump();
-    }
+    if(!SAFE_TO_RUN_PUMP || timeover)
+    { 
+      stopPump();     
+    }    
   }
 }
 
@@ -600,6 +617,7 @@ void coreTask()
     if(health == 1)
     {
       Log.trace("Health OK" CR);
+      relayConditionSafeGuard();
       evaluateTankState();
       takeActions();
     }
@@ -786,6 +804,9 @@ void evaluateTankState()
       stateChanged = true;
       tankState.pump = pump;
     }
+
+    //monitor full
+    trackTankFull(tankState.low, tankState.high);
 
     // monitor overflow
     trackOverFlow(tankState.pump, tankState.high);
@@ -1008,11 +1029,42 @@ void trackOverFlow(int pump, int high)
 
 
 
+void trackTankFull(int low, int high)
+{
+  currentTimeStamp = millis();
+  
+  // track overflow
+  if(low == 1 && high == 1)
+  {
+    Log.trace("Tank full " CR);  
+
+    if(TANK_FULL == false)
+    {
+      TANK_FULL = true;
+
+      if(lastTankFullDetect == 0)
+      {
+        lastTankFullDetect = currentTimeStamp;
+      }
+    }
+  }
+  else
+  {
+    if(TANK_FULL == true)
+    {
+      TANK_FULL = false;
+      lastTankFullDetect = 0;
+    }
+  }
+}
+
+
+
 void checkAndRespondToRelayConditionSafeGuard()
 {
-  if(!willOverflow())
+  if(!SAFE_TO_RUN_PUMP)
   {
-     server->send(400, "text/plain", "SAFE_TO_RUN=FALSE");
+     server->send(400, "text/plain", "SAFE_TO_RUN_PUMP=FALSE");
      return;
   }
 }
@@ -1400,7 +1452,7 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      Log.notice("Running Notification service" CR);
+      Log.trace("Running Notification service" CR);
 
       if(WiFi.status()== WL_CONNECTED)
       { 
