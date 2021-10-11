@@ -28,13 +28,11 @@ WiFiEventHandler gotIpEventHandler, disconnectedEventHandler;
 std::unique_ptr<ESP8266WebServer> server;
 
 boolean inited = false;
-long initialReadTime = 0;
-long minInitialSensorReadTime = 10000;
-long minSensorTestReadtime = 10000;
 
 const char* APNAME="AQUA-001";
 const char* AP_PASS="iotpassword";
 const char* serverName = "http://iot.flashvisions.com";
+const int DEFAULT_RUNTIME = 120; //seconds
 
 String capabilities = "{\"name\":\"" + String(APNAME) + "\",\"devices\":{\"name\":\"Drinking Water storage Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 String switch1state;
@@ -42,44 +40,48 @@ String subMessage;
 String data;
 
 boolean PUMP_EVENT = false;
-boolean LIQUID_LEVEL_OK = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
-long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
-long last_notify = 0;
-long currentTimeStamp;
-boolean systemFault;
-boolean beeping;
+boolean TANK_NOT_FULL = true;
+boolean systemFault = false;
+boolean beeping = false;
 boolean debug = false;
 boolean network = false;
+
+const unsigned long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
+const unsigned long SENSOR_RECENT_TEST_THRESHOLD = 60000;
+const unsigned long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
+const unsigned long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const unsigned long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const unsigned long OVERFLOW_STATE_THRESHOLD = 5000;
+const unsigned long SENSOR_TEST_THRESHOLD = 120000;
+const unsigned long minInitialSensorReadTime = 10000;
+const unsigned long minSensorTestReadtime = 10000;
+
+unsigned long initialReadTime = 0;
+unsigned long last_notify = 0;
+unsigned long time_over_check;
+unsigned long currentTimeStamp;
+unsigned long lastTankFullDetect = 0;
+unsigned long timeover;
+unsigned long sensorTestTime = 0;
+long max_runtime;
+
 int echo = 1;
 int error = 0;
 
-
-const long SENSOR_RECENT_TEST_THRESHOLD = 60000;
-const long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
-const long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
-const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 5000;
-const long OVERFLOW_STATE_THRESHOLD = 5000;
-const long SENSOR_TEST_THRESHOLD = 120000;
-
 boolean sensorCheck = false;
-long sensorTestTime = 0;
 boolean sensorsInvert = false;
 boolean BEEPING = false;
 
 int low, high, pump;
-long lastLowChange, lastHighChange, lastPumpChange, lastOverflowCondition;
-int normalLow, normalHigh;
-int invertLow, invertHigh;
-
+unsigned long lastLowChange, lastHighChange, lastPumpChange, lastOverflowCondition;
+int normalLow, normalHigh, invertLow, invertHigh;
 
 int health = 1;
-boolean SENSOR_TEST_EVENT = false;
 int INSUFFICIENTWATER = 0;
 int SYSTEM_ERROR = 0;
 long lastSensorTest = 0;
 boolean isPumpSensorNpN = true;
-
 
 const int EEPROM_LIMIT = 512;
 int eeAddress = 0;
@@ -294,15 +296,15 @@ void setup() {
 
     
     runner.init();
-    Log.notice("Initialized scheduler");
+    Log.notice("Initialized scheduler" CR);
     
     runner.addTask(t1);
-    Log.notice("Added core task to scheduler");
+    Log.notice("Added core task to scheduler" CR);
     
     delay(5000);
     
     t1.enable();
-    Log.notice("Enabled task t1");
+    Log.notice("Enabled task t1" CR);
 }
 
 
@@ -323,7 +325,6 @@ void init_server()
   server->on("/notify/set", setNotify);
   server->on("/notify/url", getNotifyURL);
   server->on("/notify/url/set", setNotifyURL);
-  server->on("/portal", requestPortal);
   
   server->onNotFound(handleNotFound);
   server->begin();
@@ -497,6 +498,34 @@ boolean was_sensor_test_done_recently()
 
 
 
+
+/**
+ * Checks water level condition using external float switch to determine whether pump can be run or not
+ */
+void relayConditionSafeGuard()
+{
+  currentTimeStamp = millis();
+ 
+  /* prove that tank was not full recently (less than a day) or is not full right now */
+  
+
+  /* If time over of liquid level recently full then stop */
+  time_over_check = millis();
+
+  if(conf.relay == 1)
+  {
+    max_runtime = conf.relay_runtime * 1000;
+    timeover = ((time_over_check - conf.relay_start) > max_runtime);
+    
+    if(!TANK_NOT_FULL || timeover)
+    {      
+      stopPump();
+    }
+  }
+}
+
+
+
 /* Initialize settinsg and sensors */
 void initialise()
 {  
@@ -584,6 +613,7 @@ void loop() {
     runner.execute();
     wm.process();    
 
+  
     if(WiFi.status()== WL_CONNECTED)
     {
       server->handleClient();
@@ -596,6 +626,12 @@ void loop() {
  */
 void takeActions()
 {
+  if(conf.reset == 1)
+  {
+    delay(5000);    
+    eraseSettings();
+    ESP.restart();
+  }
   if(SYSTEM_ERROR == 1)
   {
     switchOnBeeper();
@@ -877,6 +913,20 @@ void trackSystemError(int &error, String message)
 }
 
 
+
+boolean isTankFull(){
+  if(low == 1 && high == 1)
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+
+
 void trackInsufficientWater(int &low, int &high, int &pump)
 {
   if(low == 0 && high == 0 && pump == 0)
@@ -960,9 +1010,9 @@ void trackOverFlow(int pump, int high)
 
 void checkAndRespondToRelayConditionSafeGuard()
 {
-  if(!LIQUID_LEVEL_OK)
+  if(!willOverflow())
   {
-     server->send(400, "text/plain", "LIQUID_LEVEL_OK=FALSE");
+     server->send(400, "text/plain", "SAFE_TO_RUN=FALSE");
      return;
   }
 }
@@ -985,7 +1035,6 @@ void handleRoot() {
 void handleReset() 
 {
   conf.reset = 1;
-  writeSettings();
   server->send(200, "text/plain", "Resetting in 5 seconds");
 }
 
@@ -1255,17 +1304,6 @@ void setNotifyURL()
 }
 
 
-
-/**
- * Request portal
- */
-void requestPortal()
-{
-  wm.startWebPortal();
-}
-
-
-
 /**
  * Add to Notification queue
  */
@@ -1362,7 +1400,7 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      Log.trace("Running Notification service" CR);
+      Log.notice("Running Notification service" CR);
 
       if(WiFi.status()== WL_CONNECTED)
       { 
@@ -1370,7 +1408,7 @@ void dispatchPendingNotification()
         
         Notification notice;
 
-        Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
+        Log.notice("Popping notification from queue. Current size = %d" CR, queue.count());
 
         notice = queue.dequeue();        
         notice.send_time = millis();
@@ -1467,9 +1505,14 @@ void initSettings()
     strncpy(conf.endpoint, tmp, strlen(tmp));
     
     conf.notify = 1;
+    conf.relay = 0;
+    conf.relay_runtime = DEFAULT_RUNTIME;
+    conf.relay_start = 0;
+    conf.relay_stop = 0;
+    conf.reset = 0;
+    conf.timestamp = 0;
   }
 
-  LIQUID_LEVEL_OK = true;
 
   // save settings
   writeSettings();
@@ -1483,9 +1526,9 @@ void initSettings()
  */
 void writeSettings()
 {
-  EEPROM.begin(512);
-  
+  EEPROM.begin(EEPROM_LIMIT);
   eeAddress = 0;
+  
   conf.timestamp = millis();
 
   EEPROM.write(eeAddress, conf.relay);
@@ -1505,7 +1548,7 @@ void writeSettings()
   EEPROM.write(eeAddress, conf.endpoint_length);
   eeAddress++;
   
-  writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
+  writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);+
 
   EEPROM.commit();
   EEPROM.end();
@@ -1534,8 +1577,7 @@ void writeEEPROM(int startAdr, int len, char* writeString) {
  */
 void readSettings()
 {
-  EEPROM.begin(512);
-  
+  EEPROM.begin(EEPROM_LIMIT);
   eeAddress = 0;
 
   conf.relay = EEPROM.read(eeAddress);
@@ -1581,7 +1623,7 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
  */
 void eraseSettings()
 {
-  EEPROM.begin(512);
+  EEPROM.begin(EEPROM_LIMIT);
   
   Log.notice("Erasing eeprom" CR);  
   for (int i = 0; i < EEPROM_LIMIT; i++){
