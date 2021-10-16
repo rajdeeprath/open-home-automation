@@ -477,6 +477,9 @@ void testSensors()
         
         Log.notice(" SENSORS ERROR " CR);
 
+        //switchOnBeeper();
+        notifyURL(sensorReport, 1);
+        
         health = 0;        
       }
     }
@@ -630,10 +633,9 @@ void coreTask()
 void loop() {
     runner.execute();
     wm.process();    
-
   
     if(WiFi.status()== WL_CONNECTED)
-    {
+    {      
       server->handleClient();
     }
 }
