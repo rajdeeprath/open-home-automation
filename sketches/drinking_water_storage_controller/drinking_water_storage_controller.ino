@@ -1450,8 +1450,10 @@ String getPostNotificationString(Notification &notice)
  */
 void dispatchPendingNotification()
 {
+  currentTimeStamp = millis();
+  
   if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
-  {    
+  { 
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
       Log.trace("Running Notification service" CR);
