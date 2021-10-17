@@ -51,8 +51,9 @@ boolean network = false;
 const unsigned long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 const unsigned long SENSOR_RECENT_TEST_THRESHOLD = 60000;
 const unsigned long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
-const unsigned long SENSOR_STATE_CHANGE_THRESHOLD = 4000;
-const unsigned long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const unsigned long SENSOR_STATE_CHANGE_THRESHOLD = 5000;
+const unsigned long HIGH_SENSOR_STATE_CHANGE_THRESHOLD = 2000;
+const unsigned long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 2000;
 const unsigned long OVERFLOW_STATE_THRESHOLD = 1000;
 const unsigned long SENSOR_TEST_THRESHOLD = 120000;
 const unsigned long minInitialSensorReadTime = 10000;
@@ -158,7 +159,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
  */
 void switchOffRelay()
 {
-    Log.trace("Turning off relay");
+    Log.notice("Turning off relay");
     
     conf.relay=0;
     conf.relay_stop = millis();
@@ -172,7 +173,7 @@ void switchOffRelay()
  */
 void switchOnRelay()
 {
-    Log.trace("Turning on relay");
+    Log.notice("Turning on relay");
   
     conf.relay=1;
     conf.relay_start = millis();
@@ -477,10 +478,10 @@ void testSensors()
         
         Log.notice(" SENSORS ERROR " CR);
 
-        //switchOnBeeper();
+        switchOnBeeper();
         notifyURL(sensorReport, 1);
         
-        health = 0;        
+        health = 0;// set to 1 to bypass health check when testing
       }
     }
   }
@@ -896,7 +897,7 @@ boolean willOverflow()
 boolean hasHighChanged()
 {
   currentTimeStamp = millis();
-  return ((currentTimeStamp - lastHighChange) > SENSOR_STATE_CHANGE_THRESHOLD && lastHighChange > 0);
+  return ((currentTimeStamp - lastHighChange) > HIGH_SENSOR_STATE_CHANGE_THRESHOLD && lastHighChange > 0);
 }
 
 
