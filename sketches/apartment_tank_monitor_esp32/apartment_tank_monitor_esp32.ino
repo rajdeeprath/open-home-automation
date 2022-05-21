@@ -386,7 +386,7 @@ void setup() {
       while(true){ delay(100);}
     }
     else
-    {      
+    {
       if (rtc.lostPower()) 
       {
         Serial.println("RTC lost power, let's set the time!");
