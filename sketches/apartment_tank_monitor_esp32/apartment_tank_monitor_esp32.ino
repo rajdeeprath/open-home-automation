@@ -247,35 +247,47 @@ void lcd_print(LiquidCrystal_I2C screen, char* line, int posx=0, int posy=0, boo
 
 
 
-void internal_lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true)
+void internal_lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true, bool clean=true)
 {
   char msg[30];
-  sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
-  lcd_print(internal_lcd, msg, 0, 0, backlit);
+  //sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
+  sprintf(msg, " %d   %d   %d   %d ", pump, high, mid, low);
+  lcd_print(internal_lcd, msg, 0, 0, backlit, clean);
 }
 
 
-void internal_lcd_print_rtc_time(bool backlit=true)
+void lcd_print_rtc_time(LiquidCrystal_I2C lcd, bool backlit=true)
 {
   rtctime = rtc.now();
         
   char time_str[20];
   sprintf(time_str, "%d/%d/%d %d:%d", rtctime.day(), rtctime.month(), rtctime.year(), rtctime.hour(), rtctime.minute());        
-  lcd_print(internal_lcd, time_str, 0, 1, backlit, false);
+  lcd_print(lcd, time_str, 0, 1, backlit, false);
 }
 
 
-void lcd_print_system_time(bool backlit=true)
+void lcd_print_system_time(LiquidCrystal_I2C lcd, bool backlit=true)
 {
   if(!getLocalTime(&timeinfo)){
     Log.error("Failed to obtain time" CR);
-    lcd_print(internal_lcd, "Failed to obtain time", 0, 1, backlit, false);
+    lcd_print(lcd, "Failed to obtain time", 0, 1, backlit, false);
     return;
   }
+  
+  char ampm[2];
+  if(timeinfo.tm_hour>12)
+  {
+    sprintf(ampm, "PM");        
+  }
+  else
+  {
+    sprintf(ampm, "AM");        
+  }
+  
 
   char buff[20];
-  sprintf(buff, "%d/%d/%d %d:%d", timeinfo.tm_mday, timeinfo.tm_mon, timeinfo.tm_year, timeinfo.tm_hour, timeinfo.tm_min);        
-  lcd_print(internal_lcd, buff, 0, 1, backlit, false);
+  sprintf(buff, "        %d:%d %s", timeinfo.tm_hour, timeinfo.tm_min, ampm);        
+  lcd_print(lcd, buff, 0, 1, backlit, false);
 }
  
 
@@ -376,7 +388,7 @@ void setup() {
       while(true){ delay(100);}
     }
     else
-    {
+    {      
       if (rtc.lostPower()) 
       {
         Serial.println("RTC lost power, let's set the time!");
@@ -387,7 +399,7 @@ void setup() {
         rtctime = rtc.now();
         temperature = rtc.getTemperature();
         
-        internal_lcd_print_rtc_time();
+        lcd_print_rtc_time(internal_lcd);
         delay(2000);
 
         struct timeval tv;
@@ -448,7 +460,6 @@ void setup() {
 
     /* Misc init */  
     initialReadTime = millis();
-    lcd_print(internal_lcd, " I AM  READY   ", 0, 0, false);    
     internal_lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
 
     
@@ -552,25 +563,16 @@ void alarmOff()
 
 void allIndicatorsOn()
 {
-  //lowLedOn();
-  //midLedOn();
-  //highLedOn();
-  //pumpLedOn();
-  //systemLedOn();
+  lcd_print(indicator_lcd, "   >>>>>>>>>>  ", 0, 1, true, false);  
   blinkAlarm();
 }
 
 
 void allIndicatorsOff()
 {
-  //lowLedOff();
-  //midLedOff();
-  //highLedOff();
-  //pumpLedOff();
-  //systemLedOff();
+  lcd_print(indicator_lcd, "", 0, 1, false, true);
   alarmOff();
 }
-
 
 
 /* First read of sensors as soon as system starts */
@@ -597,8 +599,8 @@ void initSensors()
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
 
-  lcd_print(internal_lcd, "WARMING UP", 0, 1, true, false);
-  lcd_print(indicator_lcd, "WARMING UP", 0, 1, true, false);  
+  lcd_print(internal_lcd, "   WARMING UP  ", 0, 1, true, false);
+  lcd_print(indicator_lcd, "   WARMING UP  ", 0, 1, true, false);  
   
   // initial read time
   
@@ -607,10 +609,9 @@ void initSensors()
       inited = true;
       Log.notice("Inited : " CR);
       
-      lcd_print(internal_lcd, "INITIALISED!!", 0, 1, true, false);
-      lcd_print(indicator_lcd, "INITIALISED!!", 0, 1, true, false);
+      lcd_print(internal_lcd, "  INITIALISED  ", 0, 1, true, false);
+      lcd_print(indicator_lcd, "  INITIALISED  ", 0, 1, true, false);
       
-      //systemLedOff();
 
       String message = buildWaterLevelMessage(tankState);
       
@@ -852,8 +853,9 @@ void evaluateTankState()
     updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump, PUMP_EVENT);
 
 
-    // print tank state to lcd 
-    internal_lcd_print_sensors(pump, high, mid, low, false);
+    // print tank state to lcd (without clearing screen) 
+    internal_lcd_print_sensors(pump, high, mid, low, false, false);
+    lcd_print_system_time(internal_lcd, false);
 
 
     /***************************/ 
@@ -913,7 +915,9 @@ void doSensorTest()
   sensorTestTime = millis();
   
   Log.notice("Starting sensor test" CR);
-  lcd_print(internal_lcd, "SENSOR TEST", 0, 1, true, false);
+  
+  lcd_print(internal_lcd, "  SENSOR TEST  ", 0, 1, true, false);
+  lcd_print(indicator_lcd, "CHECKING SENSORS", 0, 1, true, false);
   
   normalizeSensorLevels();  
 }
@@ -958,9 +962,7 @@ void invertSensorLevels()
  * End / cancel sensor test
  */
 void terminateSensorTest()
-{
-  //systemLedOff();
-  
+{  
   sensorCheck = false;  
   sensorsInvert = false;
   sensorTestTime = millis();
@@ -1168,8 +1170,8 @@ void evaluateAlarms()
   {
     //Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
     
-    // between 5 am and 2 pm or between 5 pm and 7 pm pump runs 
-    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 20) || (timeinfo.tm_hour >= 17 && timeinfo.tm_hour < 20))
+    // between 5 am and 2 pm or between 4:30 pm and 8 pm pump runs 
+    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 20) || (timeinfo.tm_hour >= 16 && timeinfo.tm_hour < 20))
     {
       // turn off emergency flag
       if(EMERGENCY_PUMP_EVENT){
@@ -1263,8 +1265,11 @@ boolean hasPumpChanged()
 void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
 {
   char msg[30];
-  sprintf(msg, " %d | %d | %d | %d ", pump, high, mid, low);
-  lcd_print(indicator_lcd, msg, 0, 0, backlit);  
+  sprintf(msg, " %d   %d   %d   %d ", pump, high, mid, low);
+  lcd_print(indicator_lcd, msg, 0, 0, backlit);    
+
+  //lcd_print_system_time(internal_lcd, PUMP_EVENT);
+  //lcd_print_system_time(indicator_lcd, PUMP_EVENT);
 
 
   // update low water indication
@@ -1273,7 +1278,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
     if(INSUFFICIENTWATER == 1)
     {
       // show indicator
-      lcd_print(indicator_lcd, " WATER LEVEL TOO LOW ", 0, 0, true);  
+      lcd_print(indicator_lcd, " WATER LEVEL TOO LOW ", 0, 1, true);  
     }
   }
 
@@ -1281,6 +1286,8 @@ void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
     // update overflow indication
    if(willOverflow())
    {
+      lcd_print(indicator_lcd, " OVERFLOW CONDITION ", 0, 1, true);  
+    
       if(overFlowAlarmStart == 0){
         overFlowAlarmStart = currentTimeStamp;
       }
@@ -1314,9 +1321,6 @@ void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
    {
       beeperOff();
    }
-
-
-   lcd_print_system_time(PUMP_EVENT);
 }
 
 
