@@ -1314,6 +1314,9 @@ void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
    {
       beeperOff();
    }
+
+
+   lcd_print_system_time(PUMP_EVENT);
 }
 
 
