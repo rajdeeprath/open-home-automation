@@ -56,8 +56,6 @@ boolean INDICATOR_GLOW = false;
 
 long last_notify = 0;
 long lastBeepStateChange;
-long lastPumpLedUpdate;
-long lastSystemLedUpdate;
 long lastAlarmUpdate;
 long overFlowAlarmStart;
 
@@ -563,7 +561,7 @@ void alarmOff()
 
 void allIndicatorsOn()
 {
-  lcd_print(indicator_lcd, "   >>>>>>>>>>  ", 0, 1, true, false);  
+  lcd_print(indicator_lcd, "  SYSTEM READY  ", 0, 1, true); 
   blinkAlarm();
 }
 
@@ -577,10 +575,7 @@ void allIndicatorsOff()
 
 /* First read of sensors as soon as system starts */
 void initSensors()
-{
-  // indicate system startup
-  //systemLedOn();
-  
+{  
   // initially we read in all sensors  
   
   // read bottom sensor
@@ -908,9 +903,7 @@ void evaluateTankState()
 
 /* Start a full sensor test */
 void doSensorTest()
-{
-  //systemLedOn();  
-  
+{  
   sensorCheck = true;
   sensorTestTime = millis();
   
@@ -1070,7 +1063,6 @@ void testSensors()
           notifyURL(sensorReport, 1);
           
           beeperOn();
-          //systemLedOn();
         }
       }
     }
@@ -1170,8 +1162,8 @@ void evaluateAlarms()
   {
     //Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
     
-    // between 5 am and 2 pm or between 4:30 pm and 8 pm pump runs 
-    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 16 && timeinfo.tm_min >=30) && timeinfo.tm_hour < 20) || (timeinfo.tm_hour >= 16 && timeinfo.tm_hour < 20))
+    // between 5:00 am and 2:00 pm or between 5:00 pm and 8:00 pm pump runs 
+    if(((timeinfo.tm_hour == 5 && timeinfo.tm_min >=0) && timeinfo.tm_hour < 14) || (timeinfo.tm_hour > 5 && timeinfo.tm_hour < 14) || ((timeinfo.tm_hour == 17 && timeinfo.tm_min >=0) && timeinfo.tm_hour < 20) || (timeinfo.tm_hour > 17 && timeinfo.tm_hour < 20))
     {
       // turn off emergency flag
       if(EMERGENCY_PUMP_EVENT){
