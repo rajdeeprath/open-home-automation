@@ -52,6 +52,7 @@ boolean EMERGENCY_PUMP_EVENT = false;
 boolean POWER_SAVER = false;
 boolean MAINTAINENCE_MODE = false;
 boolean SOFTRESET = true;
+boolean INDICATOR_GLOW = false;
 
 long last_notify = 0;
 long lastBeepStateChange;
@@ -276,7 +277,7 @@ void lcd_print_system_time(bool backlit=true)
   sprintf(buff, "%d/%d/%d %d:%d", timeinfo.tm_mday, timeinfo.tm_mon, timeinfo.tm_year, timeinfo.tm_hour, timeinfo.tm_min);        
   lcd_print(internal_lcd, buff, 0, 1, backlit, false);
 }
-
+ 
 
 
 void enable_lcd_backlight(LiquidCrystal_I2C lcd)
@@ -848,7 +849,7 @@ void evaluateTankState()
     trackSystemError(error);
 
     // Indicate change
-    updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump);
+    updateIndicators(tankState.low, tankState.mid, tankState.high, tankState.pump, PUMP_EVENT);
 
 
     // print tank state to lcd 
@@ -1259,61 +1260,25 @@ boolean hasPumpChanged()
 /**
  * Updates state of indicators/output to end user for monitoring
  */
-void updateIndicators(int &low, int &mid, int &high, int &pump)
+void updateIndicators(int &low, int &mid, int &high, int &pump, bool backlit)
 {
-  // update low indicator
-  if(low == 1)
-  {
-    //lowLedOn();
-  }
-  else
-  {
-    //lowLedOff();
-  }
+  char msg[30];
+  sprintf(msg, " %d | %d | %d | %d ", pump, high, mid, low);
+  lcd_print(indicator_lcd, msg, 0, 0, backlit);  
 
 
-  // update mid indicator
-  if(mid == 1)
-  {
-    //midLedOn();
-  }
-  else
-  {
-    //midLedOff();
-  }
-
-
-  // update high indicator
-  if(high == 1)
-  {
-   //highLedOn();
-  }
-  else
-  {
-    //highLedOff();
-  }
-
-
-  // update high indicator
-  if(pump == 1)
-  {
-    //pumpLedOn();
-  }
-  else
+  // update low water indication
+  if(pump == 0)
   {
     if(INSUFFICIENTWATER == 1)
     {
       // show indicator
-      //blinkPumpLed();
-    }
-    else
-    {
-      //stop indicator
-      //pumpLedOff();
+      lcd_print(indicator_lcd, " WATER LEVEL TOO LOW ", 0, 0, true);  
     }
   }
 
 
+    // update overflow indication
    if(willOverflow())
    {
       if(overFlowAlarmStart == 0){
@@ -1342,12 +1307,11 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    // update system sensor
    if(SYSTEM_ERROR)
    {
-      //blinkSystemLed();
+      lcd_print(internal_lcd, " SYSTEM ERROR ", 0, 1, true, true);
       beeperOn();
    }
    else
    {
-      //systemLedOff();
       beeperOff();
    }
 }
@@ -1380,7 +1344,6 @@ void trackSystemError(int &error, String message)
   {
     if(SYSTEM_ERROR == 0){
       SYSTEM_ERROR = 1;
-      lcd_print(internal_lcd, "SYSTEM ERROR", 0, 1, true, true);
       notifyURL(message, 1);
     }
   }
