@@ -31,11 +31,14 @@
 
 // indicators
 #define ALARM 19 //32
+
+/*
 #define LED_SYSTEM 33
 #define LED_PUMP 13
 #define LED_HIGH 25
 #define LED_MID 26
 #define LED_LOW 27
+*/
 
 #define BEEPER 23
 #define NOTICE_LIMIT 5
@@ -76,9 +79,6 @@ const long OVERFLOW_STATE_THRESHOLD = 300000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
 boolean TIME_SYNCED = false;
-
-const char* ssid = "Tomato24";
-const char* password =  "bhagawadgita@123";
 
 
 struct Settings {
@@ -186,7 +186,8 @@ HTTPClient http;
 RTC_DS3231 rtc;
 DateTime rtctime;
 
-LiquidCrystal_I2C lcd(0x3F, 16, 2);
+LiquidCrystal_I2C internal_lcd(0x3F, 16, 2);
+LiquidCrystal_I2C indicator_lcd(0x3D, 16, 2);
 
 WiFiManager wm;
 
@@ -223,39 +224,43 @@ void doReset(){
 
 
 
-void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
+/**
+ * Print to lcd specified in the parameter along with other attributes
+ */
+void lcd_print(LiquidCrystal_I2C screen, char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
 {
   if(clean){
-    lcd.clear();
+    screen.clear();
   }
 
   if(backlit){
-    lcd.backlight(); 
+    screen.backlight(); 
   }else{
-    lcd.noBacklight();
+    screen.noBacklight();
   }
   
-  lcd.setCursor(posx, posy);
-  lcd.print(line);
+  screen.setCursor(posx, posy);
+  screen.print(line);
 }
 
 
 
-void lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true)
+
+void internal_lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true)
 {
   char msg[30];
   sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
-  lcd_print(msg, 0, 0, backlit);
+  lcd_print(internal_lcd, msg, 0, 0, backlit);
 }
 
 
-void lcd_print_rtc_time(bool backlit=true)
+void internal_lcd_print_rtc_time(bool backlit=true)
 {
   rtctime = rtc.now();
         
   char time_str[20];
   sprintf(time_str, "%d/%d/%d %d:%d", rtctime.day(), rtctime.month(), rtctime.year(), rtctime.hour(), rtctime.minute());        
-  lcd_print(time_str, 0, 1, backlit, false);
+  lcd_print(internal_lcd, time_str, 0, 1, backlit, false);
 }
 
 
@@ -263,24 +268,24 @@ void lcd_print_system_time(bool backlit=true)
 {
   if(!getLocalTime(&timeinfo)){
     Log.error("Failed to obtain time" CR);
-    lcd_print("Failed to obtain time", 0, 1, backlit, false);
+    lcd_print(internal_lcd, "Failed to obtain time", 0, 1, backlit, false);
     return;
   }
 
   char buff[20];
   sprintf(buff, "%d/%d/%d %d:%d", timeinfo.tm_mday, timeinfo.tm_mon, timeinfo.tm_year, timeinfo.tm_hour, timeinfo.tm_min);        
-  lcd_print(buff, 0, 1, backlit, false);
+  lcd_print(internal_lcd, buff, 0, 1, backlit, false);
 }
 
 
 
-void enable_lcd_backlight()
+void enable_lcd_backlight(LiquidCrystal_I2C lcd)
 {
   lcd.backlight();
 }
 
 
-void disable_lcd_backlight()
+void disable_lcd_backlight(LiquidCrystal_I2C lcd)
 {
   lcd.noBacklight();
 }
@@ -298,7 +303,7 @@ void printLocalTime()
 
 //gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  lcd_print("  CONFIG MODE  ", 0, 1);
+  lcd_print(internal_lcd, "  CONFIG MODE  ", 0, 1);
   Serial.println(WiFi.softAPIP());
   Serial.println(myWiFiManager->getConfigPortalSSID());
 }
@@ -336,22 +341,10 @@ void setup() {
     normalizeSensorLevels();
 
 
-    // init indicators
+    // init indicators    
 
-    pinMode(LED_LOW, OUTPUT);
-    digitalWrite(LED_LOW, LOW);
-    
-    pinMode(LED_MID, OUTPUT);
-    digitalWrite(LED_MID, LOW);
-    
-    pinMode(LED_HIGH, OUTPUT);
-    digitalWrite(LED_HIGH, LOW);
-    
-    pinMode(LED_SYSTEM, OUTPUT);
-    digitalWrite(LED_SYSTEM, LOW);
-    
-    pinMode(LED_PUMP, OUTPUT);
-    digitalWrite(LED_PUMP, LOW);
+    indicator_lcd.init();
+    lcd_print(indicator_lcd, "  INITIALIZING ", 0, 0);    
 
     pinMode(ALARM, OUTPUT);
     digitalWrite(ALARM, LOW);
@@ -363,18 +356,20 @@ void setup() {
 
     /* Init LCD */
     
-    lcd.init();
-    lcd_print("  INITIALIZING ", 0, 0);
+    internal_lcd.init();
+    lcd_print(internal_lcd, "  INITIALIZING ", 0, 0);
+
+    
     delay(2000);
 
-
+    
 
     /* INIT RTC */
     
     if (!rtc.begin()) 
     {
       Log.notice("RTC Failure" CR);
-      lcd_print(" RTC Failure ", 0, 0); 
+      lcd_print(internal_lcd, " RTC Failure ", 0, 0); 
       beeperOn();
             
       while(true){ delay(100);}
@@ -391,7 +386,7 @@ void setup() {
         rtctime = rtc.now();
         temperature = rtc.getTemperature();
         
-        lcd_print_rtc_time();
+        internal_lcd_print_rtc_time();
         delay(2000);
 
         struct timeval tv;
@@ -412,7 +407,7 @@ void setup() {
     chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
     char chipid_str[20];
     sprintf(chipid_str, "ID: %04X%08X", (uint16_t)(chipid>>32), (uint32_t)chipid);
-    lcd_print(chipid_str, 0, 0, true);    
+    lcd_print(internal_lcd, chipid_str, 0, 0, true);    
     delay(2000);
     
 
@@ -425,13 +420,13 @@ void setup() {
 
     Log.notice("Attempting to connect to network using saved credentials" CR);  
     Log.notice("Connecting to WiFi..");
-    lcd_print(" Connecting... ", 0, 0);
+    lcd_print(internal_lcd, " Connecting... ", 0, 0);
     
     
     if(wm.autoConnect("AMU-PC-001", "iot@123"))
     {
       Log.notice("Connected to WiFi");
-      lcd_print(" WIFI CONNECTED ", 0, 0);
+      lcd_print(internal_lcd, " WIFI CONNECTED ", 0, 0);
       delay(2000);
 
       if(!TIME_SYNCED)
@@ -442,23 +437,9 @@ void setup() {
     }
     else {
         Log.notice("Configportal running");
-        lcd_print(" CONFIG MODE ", 0, 0);
+        lcd_print(internal_lcd, " CONFIG MODE ", 0, 0);
     }
     
-
-    /*
-    WiFi.begin(ssid, password); 
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.println("Connecting to WiFi..");
-      lcd_print(" Connecting... ", 0, 0);
-    }
-   
-    lcd_print(" WIFI CONNECTED ", 0, 0);
-    delay(2000);
-    */
-
-
 
     /* Print synced system time */
     printLocalTime();
@@ -466,8 +447,8 @@ void setup() {
 
     /* Misc init */  
     initialReadTime = millis();
-    lcd_print(" I AM  READY   ", 0, 0, false);    
-    lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
+    lcd_print(internal_lcd, " I AM  READY   ", 0, 0, false);    
+    internal_lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
 
     
     /* Prepare scheduler */
@@ -476,8 +457,6 @@ void setup() {
     //Log.notice("Initialized scheduler" CR); 
        
 }
-
-
 
 
 
@@ -527,109 +506,6 @@ void beeperOff()
 
 
 
-void lowLedOn()
-{
-  if(indicators.low == 0)
-  {
-    digitalWrite(LED_LOW, HIGH);
-    indicators.low = 1;
-  }
-}
-
-
-void lowLedOff()
-{
-  if(indicators.low == 1)
-  {
-    digitalWrite(LED_LOW, LOW);
-    indicators.low = 0;
-  }
-}
-
-
-
-void midLedOn()
-{
-  if(indicators.mid == 0)
-  {
-    digitalWrite(LED_MID, HIGH);
-    indicators.mid = 1;
-  }
-}
-
-
-void midLedOff()
-{
-  if(indicators.mid == 1)
-  {
-    digitalWrite(LED_MID, LOW);
-    indicators.mid = 0;
-  }
-}
-
-
-
-
-void highLedOn()
-{
-  if(indicators.high == 0)
-  {
-    digitalWrite(LED_HIGH, HIGH);
-    indicators.high = 1;
-  }
-}
-
-
-void highLedOff()
-{
-  if(indicators.high == 1)
-  {
-    digitalWrite(LED_HIGH, LOW);
-    indicators.high = 0;
-  }
-}
-
-
-void pumpLedOn()
-{
-  if(indicators.pump == 0)
-  {
-    digitalWrite(LED_PUMP, HIGH);
-    indicators.pump = 1;
-  }
-}
-
-
-void pumpLedOff()
-{
-  if(indicators.pump == 1)
-  {
-    digitalWrite(LED_PUMP, LOW);
-    indicators.pump = 0;
-  }
-}
-
-
-
-void blinkPumpLed()
-{
-  currentTimeStamp = millis();
-  
-  if(currentTimeStamp - lastPumpLedUpdate > 2000)
-  {
-    if(indicators.pump == 1)
-    {
-      pumpLedOff();
-    }
-    else if(indicators.pump == 0)
-    {
-      pumpLedOn();
-    }
-    lastPumpLedUpdate = currentTimeStamp;
-  }
-}
-
-
 
 void blinkAlarm()
 {
@@ -646,47 +522,6 @@ void blinkAlarm()
       alarmOn();
     }
     lastAlarmUpdate = currentTimeStamp;
-  }
-}
-
-
-
-void blinkSystemLed()
-{
-  currentTimeStamp = millis();
-  
-  if(currentTimeStamp - lastSystemLedUpdate > 2000)
-  {
-    if(indicators.sys == 1)
-    {
-      systemLedOff();
-    }
-    else if(indicators.sys == 0)
-    {
-      systemLedOn();
-    }
-    lastSystemLedUpdate = currentTimeStamp;
-  }
-}
-
-
-
-void systemLedOn()
-{
-  if(indicators.sys == 0)
-  {
-    digitalWrite(LED_SYSTEM, HIGH);
-    indicators.sys = 1;
-  }
-}
-
-
-void systemLedOff()
-{
-  if(indicators.sys == 1)
-  {
-    digitalWrite(LED_SYSTEM, LOW);
-    indicators.sys = 0;
   }
 }
 
@@ -716,22 +551,22 @@ void alarmOff()
 
 void allIndicatorsOn()
 {
-  lowLedOn();
-  midLedOn();
-  highLedOn();
-  pumpLedOn();
-  systemLedOn();
+  //lowLedOn();
+  //midLedOn();
+  //highLedOn();
+  //pumpLedOn();
+  //systemLedOn();
   blinkAlarm();
 }
 
 
 void allIndicatorsOff()
 {
-  lowLedOff();
-  midLedOff();
-  highLedOff();
-  pumpLedOff();
-  systemLedOff();
+  //lowLedOff();
+  //midLedOff();
+  //highLedOff();
+  //pumpLedOff();
+  //systemLedOff();
   alarmOff();
 }
 
@@ -741,7 +576,7 @@ void allIndicatorsOff()
 void initSensors()
 {
   // indicate system startup
-  systemLedOn();
+  //systemLedOn();
   
   // initially we read in all sensors  
   
@@ -761,7 +596,8 @@ void initSensors()
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
 
-  lcd_print("WARMING UP", 0, 1, true, false);
+  lcd_print(internal_lcd, "WARMING UP", 0, 1, true, false);
+  lcd_print(indicator_lcd, "WARMING UP", 0, 1, true, false);  
   
   // initial read time
   
@@ -769,9 +605,11 @@ void initSensors()
   {
       inited = true;
       Log.notice("Inited : " CR);
-      lcd_print("INITIALISED!!", 0, 1, true, false);
       
-      systemLedOff();
+      lcd_print(internal_lcd, "INITIALISED!!", 0, 1, true, false);
+      lcd_print(indicator_lcd, "INITIALISED!!", 0, 1, true, false);
+      
+      //systemLedOff();
 
       String message = buildWaterLevelMessage(tankState);
       
@@ -1014,7 +852,7 @@ void evaluateTankState()
 
 
     // print tank state to lcd 
-    lcd_print_sensors(pump, high, mid, low, false);
+    internal_lcd_print_sensors(pump, high, mid, low, false);
 
 
     /***************************/ 
@@ -1027,7 +865,7 @@ void evaluateTankState()
     // evaluate and dispatch message
     if(stateChanged)
     {
-      lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
+      internal_lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
       
       String message = "";
 
@@ -1068,13 +906,13 @@ void evaluateTankState()
 /* Start a full sensor test */
 void doSensorTest()
 {
-  systemLedOn();  
+  //systemLedOn();  
   
   sensorCheck = true;
   sensorTestTime = millis();
   
   Log.notice("Starting sensor test" CR);
-  lcd_print("SENSOR TEST", 0, 1, true, false);
+  lcd_print(internal_lcd, "SENSOR TEST", 0, 1, true, false);
   
   normalizeSensorLevels();  
 }
@@ -1120,7 +958,7 @@ void invertSensorLevels()
  */
 void terminateSensorTest()
 {
-  systemLedOff();
+  //systemLedOff();
   
   sensorCheck = false;  
   sensorsInvert = false;
@@ -1154,8 +992,8 @@ void testSensors()
     normalPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
-    lcd_print_sensors(normalPump, normalHigh, normalMid, normalLow, true);
-    lcd_print("NORMALIZED TEST", 0, 1, true, false);
+    internal_lcd_print_sensors(normalPump, normalHigh, normalMid, normalLow, true);
+    lcd_print(internal_lcd, "NORMALIZED TEST", 0, 1, true, false);
   
     // change condition after minSensorTestReadtime seconds (read sensor output for `minSensorTestReadtime` ms)
     if(millis() - sensorTestTime > minSensorTestReadtime){ 
@@ -1180,8 +1018,8 @@ void testSensors()
     invertPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
-    lcd_print_sensors(invertPump, invertHigh, invertMid, invertLow, true);
-    lcd_print("INVERTED TEST", 0, 1, true, false);
+    internal_lcd_print_sensors(invertPump, invertHigh, invertMid, invertLow, true);
+    lcd_print(internal_lcd, "INVERTED TEST", 0, 1, true, false);
     
     // change condition after minSensorTestReadtime seconds
     
@@ -1197,7 +1035,7 @@ void testSensors()
       if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
       {
         health = 1;
-        lcd_print("  SENSORS OK  ", 0, 1, true, false);
+        lcd_print(internal_lcd, "  SENSORS OK  ", 0, 1, true, false);
         //forcePumpOn = false;
       }
       else
@@ -1206,7 +1044,7 @@ void testSensors()
         sensorReport = sensorReport + "\n\r";
         sensorReport = sensorReport + "NL="+normalLow+",IN="+invertLow+",NM="+normalMid+",IM="+invertMid + ",NH="+normalHigh+",IH="+invertHigh+",NP="+normalPump+",IP="+invertPump;
 
-        lcd_print(" SENSOR ERROR  ", 0, 0, true, true);
+        lcd_print(internal_lcd, " SENSOR ERROR  ", 0, 0, true, true);
 
         // pump sensor error
         if(normalPump==invertPump)
@@ -1229,7 +1067,7 @@ void testSensors()
           notifyURL(sensorReport, 1);
           
           beeperOn();
-          systemLedOn();
+          //systemLedOn();
         }
       }
     }
@@ -1426,52 +1264,52 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
   // update low indicator
   if(low == 1)
   {
-    lowLedOn();
+    //lowLedOn();
   }
   else
   {
-    lowLedOff();
+    //lowLedOff();
   }
 
 
   // update mid indicator
   if(mid == 1)
   {
-    midLedOn();
+    //midLedOn();
   }
   else
   {
-    midLedOff();
+    //midLedOff();
   }
 
 
   // update high indicator
   if(high == 1)
   {
-   highLedOn();
+   //highLedOn();
   }
   else
   {
-    highLedOff();
+    //highLedOff();
   }
 
 
   // update high indicator
   if(pump == 1)
   {
-    pumpLedOn();
+    //pumpLedOn();
   }
   else
   {
     if(INSUFFICIENTWATER == 1)
     {
       // show indicator
-      blinkPumpLed();
+      //blinkPumpLed();
     }
     else
     {
       //stop indicator
-      pumpLedOff();
+      //pumpLedOff();
     }
   }
 
@@ -1504,7 +1342,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    // update system sensor
    if(SYSTEM_ERROR)
    {
-      blinkSystemLed();
+      //blinkSystemLed();
       beeperOn();
    }
    else
@@ -1542,7 +1380,7 @@ void trackSystemError(int &error, String message)
   {
     if(SYSTEM_ERROR == 0){
       SYSTEM_ERROR = 1;
-      lcd_print("SYSTEM ERROR", 0, 1, true, true);
+      lcd_print(internal_lcd, "SYSTEM ERROR", 0, 1, true, true);
       notifyURL(message, 1);
     }
   }
@@ -1818,7 +1656,7 @@ void dispatchPendingNotification()
       else 
       {
         Log.error("WiFi not connected, cannot post data" CR);
-        lcd_print("WIFI DISCONNECTED", 0, 1, true, true);
+        lcd_print(internal_lcd, "WIFI DISCONNECTED", 0, 1, true, true);
       }
       
       posting = false;
