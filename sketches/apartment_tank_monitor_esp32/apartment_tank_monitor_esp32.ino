@@ -242,7 +242,7 @@ void lcd_print(LiquidCrystal_I2C screen, char* line, int posx=0, int posy=0, boo
 void display_sensors(LiquidCrystal_I2C screen, int pump, int high, int mid, int low, bool backlit=true, bool clean=true)
 {
   char msg[30];
-  sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
+  sprintf(msg, " %d   %d   %d   %d ", pump, high, mid, low);
   lcd_print(screen, msg, 0, 0, backlit, clean);
 }
 
@@ -757,7 +757,7 @@ void initSensors()
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
 
-  lcd_print(lcd, "WARMING UP", 0, 1, true, false);
+  lcd_print(lcd, "   WARMING UP  ", 0, 1, true, false);
   
   // initial read time
   
