@@ -75,10 +75,8 @@ const long PUMP_SENSOR_STATE_CHANGE_THRESHOLD = 10000;
 const long OVERFLOW_STATE_THRESHOLD = 300000;
 const long SENSOR_TEST_THRESHOLD = 120000;
 const long INDICATOR_TEST_THRESHOLD = 120000;
+const long WIFI_DISCONNECT_THRESHOLD = 300000;
 boolean TIME_SYNCED = false;
-
-const char* ssid = "Tomato24";
-const char* password =  "bhagawadgita@123";
 
 
 struct Settings {
@@ -163,7 +161,7 @@ long indicatorTestTime = 0;
 boolean sensorsInvert = false;
 
 int low, mid, high, pump;
-long lastLowChange, lastMidChange, lastHighChange, lastPumpChange, lastOverflowCondition;
+long lastLowChange, lastMidChange, lastHighChange, lastPumpChange, lastOverflowCondition, lastWifiDisconnect;
 int normalLow, normalMid, normalHigh, normalPump;
 int invertLow, invertMid, invertHigh, invertPump;
 
@@ -223,55 +221,65 @@ void doReset(){
 
 
 
-void lcd_print(char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
+void lcd_print(LiquidCrystal_I2C screen, char* line, int posx=0, int posy=0, bool backlit=true, bool clean=true)
 {
   if(clean){
-    lcd.clear();
+    screen.clear();
   }
 
   if(backlit){
-    lcd.backlight(); 
+    screen.backlight(); 
   }else{
-    lcd.noBacklight();
+    screen.noBacklight();
   }
   
-  lcd.setCursor(posx, posy);
-  lcd.print(line);
+  screen.setCursor(posx, posy);
+  screen.print(line);
 }
 
 
 
-void lcd_print_sensors(int pump, int high, int mid, int low, bool backlit=true)
+void display_sensors(LiquidCrystal_I2C screen, int pump, int high, int mid, int low, bool backlit=true, bool clean=true)
 {
   char msg[30];
   sprintf(msg, "Sensors: %d|%d|%d|%d", pump, high, mid, low);
-  lcd_print(msg, 0, 0, backlit);
+  lcd_print(screen, msg, 0, 0, backlit, clean);
 }
 
 
-void lcd_print_rtc_time(bool backlit=true)
+void display_rtc_time(bool backlit=true)
 {
   rtctime = rtc.now();
         
   char time_str[20];
   sprintf(time_str, "%d/%d/%d %d:%d", rtctime.day(), rtctime.month(), rtctime.year(), rtctime.hour(), rtctime.minute());        
-  lcd_print(time_str, 0, 1, backlit, false);
+  lcd_print(lcd, time_str, 0, 1, backlit, false);
 }
 
 
-void lcd_print_system_time(bool backlit=true)
+void display_system_time(LiquidCrystal_I2C screen, bool backlit=true)
 {
   if(!getLocalTime(&timeinfo)){
     Log.error("Failed to obtain time" CR);
-    lcd_print("Failed to obtain time", 0, 1, backlit, false);
+    lcd_print(screen, "Failed to obtain time", 0, 1, backlit, false);
     return;
   }
+  
+  char ampm[2];
+  if(timeinfo.tm_hour>12)
+  {
+    sprintf(ampm, "PM");        
+  }
+  else
+  {
+    sprintf(ampm, "AM");        
+  }
+  
 
   char buff[20];
-  sprintf(buff, "%d/%d/%d %d:%d", timeinfo.tm_mday, timeinfo.tm_mon, timeinfo.tm_year, timeinfo.tm_hour, timeinfo.tm_min);        
-  lcd_print(buff, 0, 1, backlit, false);
+  sprintf(buff, "        %d:%d %s", timeinfo.tm_hour, timeinfo.tm_min, ampm);        
+  lcd_print(screen, buff, 0, 1, backlit, false);
 }
-
 
 
 void enable_lcd_backlight()
@@ -298,7 +306,7 @@ void printLocalTime()
 
 //gets called when WiFiManager enters configuration mode
 void configModeCallback (WiFiManager *myWiFiManager) {
-  lcd_print("  CONFIG MODE  ", 0, 1);
+  lcd_print(lcd, "  CONFIG MODE  ", 0, 1);
   Serial.println(WiFi.softAPIP());
   Serial.println(myWiFiManager->getConfigPortalSSID());
 }
@@ -364,7 +372,7 @@ void setup() {
     /* Init LCD */
     
     lcd.init();
-    lcd_print("  INITIALIZING ", 0, 0);
+    lcd_print(lcd, "  INITIALIZING ", 0, 0);
     delay(2000);
 
 
@@ -374,10 +382,13 @@ void setup() {
     if (!rtc.begin()) 
     {
       Log.notice("RTC Failure" CR);
-      lcd_print(" RTC Failure ", 0, 0); 
-      beeperOn();
+      lcd_print(lcd, " RTC Failure ", 0, 0);      
             
-      while(true){ delay(100);}
+      while(true){ 
+        beeperOn();       
+        delay(200);
+        beeperOff();        
+        }
     }
     else
     {
@@ -391,7 +402,7 @@ void setup() {
         rtctime = rtc.now();
         temperature = rtc.getTemperature();
         
-        lcd_print_rtc_time();
+        display_rtc_time();
         delay(2000);
 
         struct timeval tv;
@@ -412,7 +423,7 @@ void setup() {
     chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
     char chipid_str[20];
     sprintf(chipid_str, "ID: %04X%08X", (uint16_t)(chipid>>32), (uint32_t)chipid);
-    lcd_print(chipid_str, 0, 0, true);    
+    lcd_print(lcd, chipid_str, 0, 0, true);    
     delay(2000);
     
 
@@ -425,13 +436,13 @@ void setup() {
 
     Log.notice("Attempting to connect to network using saved credentials" CR);  
     Log.notice("Connecting to WiFi..");
-    lcd_print(" Connecting... ", 0, 0);
+    lcd_print(lcd, " Connecting... ", 0, 0);
     
     
     if(wm.autoConnect("AMU-PC-001", "iot@123"))
     {
       Log.notice("Connected to WiFi");
-      lcd_print(" WIFI CONNECTED ", 0, 0);
+      lcd_print(lcd, " WIFI CONNECTED ", 0, 0);
       delay(2000);
 
       if(!TIME_SYNCED)
@@ -442,23 +453,9 @@ void setup() {
     }
     else {
         Log.notice("Configportal running");
-        lcd_print(" CONFIG MODE ", 0, 0);
+        lcd_print(lcd, " CONFIG MODE ", 0, 0);
     }
     
-
-    /*
-    WiFi.begin(ssid, password); 
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.println("Connecting to WiFi..");
-      lcd_print(" Connecting... ", 0, 0);
-    }
-   
-    lcd_print(" WIFI CONNECTED ", 0, 0);
-    delay(2000);
-    */
-
-
 
     /* Print synced system time */
     printLocalTime();
@@ -466,8 +463,7 @@ void setup() {
 
     /* Misc init */  
     initialReadTime = millis();
-    lcd_print(" I AM  READY   ", 0, 0, false);    
-    lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
+    display_sensors(lcd, tankState.pump, tankState.high, tankState.mid, tankState.low, true);
 
     
     /* Prepare scheduler */
@@ -761,7 +757,7 @@ void initSensors()
   sprintf(msg, "Sensors : %d | %d | %d | %d", tankState.pump, tankState.high, tankState.mid, tankState.low);
   Log.trace("Sensors : %s" CR, msg);
 
-  lcd_print("WARMING UP", 0, 1, true, false);
+  lcd_print(lcd, "WARMING UP", 0, 1, true, false);
   
   // initial read time
   
@@ -769,7 +765,7 @@ void initSensors()
   {
       inited = true;
       Log.notice("Inited : " CR);
-      lcd_print("INITIALISED!!", 0, 1, true, false);
+      lcd_print(lcd, "INITIALISED!!", 0, 1, true, false);
       
       systemLedOff();
 
@@ -1014,7 +1010,8 @@ void evaluateTankState()
 
 
     // print tank state to lcd 
-    lcd_print_sensors(pump, high, mid, low, false);
+    display_sensors(lcd, pump, high, mid, low, false, false);
+    display_system_time(lcd, false);
 
 
     /***************************/ 
@@ -1027,7 +1024,7 @@ void evaluateTankState()
     // evaluate and dispatch message
     if(stateChanged)
     {
-      lcd_print_sensors(tankState.pump, tankState.high, tankState.mid, tankState.low, true);
+      display_sensors(lcd, tankState.pump, tankState.high, tankState.mid, tankState.low, true);
       
       String message = "";
 
@@ -1074,7 +1071,7 @@ void doSensorTest()
   sensorTestTime = millis();
   
   Log.notice("Starting sensor test" CR);
-  lcd_print("SENSOR TEST", 0, 1, true, false);
+  lcd_print(lcd, "SENSOR TEST", 0, 1, true, false);
   
   normalizeSensorLevels();  
 }
@@ -1154,8 +1151,8 @@ void testSensors()
     normalPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, normalPump, normalHigh, normalMid, normalLow);
-    lcd_print_sensors(normalPump, normalHigh, normalMid, normalLow, true);
-    lcd_print("NORMALIZED TEST", 0, 1, true, false);
+    display_sensors(lcd, normalPump, normalHigh, normalMid, normalLow, true);
+    lcd_print(lcd, "NORMALIZED TEST", 0, 1, true, false);
   
     // change condition after minSensorTestReadtime seconds (read sensor output for `minSensorTestReadtime` ms)
     if(millis() - sensorTestTime > minSensorTestReadtime){ 
@@ -1180,8 +1177,8 @@ void testSensors()
     invertPump = readSensor(SENSOR_1_DATA);
 
     Log.notice("Sensors : %d | %d | %d | %d" CR, invertPump, invertHigh, invertMid, invertLow);
-    lcd_print_sensors(invertPump, invertHigh, invertMid, invertLow, true);
-    lcd_print("INVERTED TEST", 0, 1, true, false);
+    display_sensors(lcd, invertPump, invertHigh, invertMid, invertLow, true);
+    lcd_print(lcd, "INVERTED TEST", 0, 1, true, false);
     
     // change condition after minSensorTestReadtime seconds
     
@@ -1197,7 +1194,7 @@ void testSensors()
       if(normalLow != invertLow && normalMid != invertMid && normalHigh != invertHigh && normalPump != invertPump)
       {
         health = 1;
-        lcd_print("  SENSORS OK  ", 0, 1, true, false);
+        lcd_print(lcd, "  SENSORS OK  ", 0, 1, true, false);
         //forcePumpOn = false;
       }
       else
@@ -1206,7 +1203,7 @@ void testSensors()
         sensorReport = sensorReport + "\n\r";
         sensorReport = sensorReport + "NL="+normalLow+",IN="+invertLow+",NM="+normalMid+",IM="+invertMid + ",NH="+normalHigh+",IH="+invertHigh+",NP="+normalPump+",IP="+invertPump;
 
-        lcd_print(" SENSOR ERROR  ", 0, 0, true, true);
+        lcd_print(lcd, " SENSOR ERROR  ", 0, 0, true, true);
 
         // pump sensor error
         if(normalPump==invertPump)
@@ -1285,6 +1282,7 @@ void loop() {
     }
     else
     {
+      checkWifiState();
       evaluateAlarms();
       if(health == 1)
       {
@@ -1402,6 +1400,12 @@ boolean willOverflow()
 }
 
 
+boolean isWifiDisconnected()
+{
+  currentTimeStamp = millis();
+  return ((currentTimeStamp - lastWifiDisconnect) > WIFI_DISCONNECT_THRESHOLD && lastWifiDisconnect > 0);
+}
+
 
 boolean hasHighChanged()
 {
@@ -1478,6 +1482,8 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
 
    if(willOverflow())
    {
+      lcd_print(lcd, " WILL OVERFLOW ", 0, 1, true);
+    
       if(overFlowAlarmStart == 0){
         overFlowAlarmStart = currentTimeStamp;
       }
@@ -1504,6 +1510,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    // update system sensor
    if(SYSTEM_ERROR)
    {
+      lcd_print(lcd, " SYSTEM ERROR ", 0, 1, true, true);
       blinkSystemLed();
       beeperOn();
    }
@@ -1512,6 +1519,15 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
       //systemLedOff();
       beeperOff();
    }
+
+
+   // handle wifi disconnected condition & restart ESP only if we are not experiencing overflow condition
+   if(isWifiDisconnected() && !willOverflow())
+   {
+      Log.trace("Resetting ESP32 to attempt WIFI reconnection" CR);
+      ESP.restart();
+   }
+   
 }
 
 
@@ -1542,7 +1558,7 @@ void trackSystemError(int &error, String message)
   {
     if(SYSTEM_ERROR == 0){
       SYSTEM_ERROR = 1;
-      lcd_print("SYSTEM ERROR", 0, 1, true, true);
+      lcd_print(lcd, "SYSTEM ERROR", 0, 1, true, true);
       notifyURL(message, 1);
     }
   }
@@ -1741,6 +1757,28 @@ void enqueueNotification(struct Notification notice)
 
 
 
+/**
+ * Check WIFI state for disconnection
+ */
+void checkWifiState()
+{
+  if(WiFi.status()== WL_CONNECTED)
+  {
+    lastWifiDisconnect = 0;
+  }
+  else
+  {
+    // track disconnect
+    if(lastWifiDisconnect == 0)
+    {
+      currentTimeStamp = millis();
+      lastWifiDisconnect = currentTimeStamp;
+    }
+  }
+}
+
+
+
 
 /**
  * Prepare notification string object to send to remote server
@@ -1790,6 +1828,7 @@ String getPostNotificationString(Notification &notice)
 void dispatchPendingNotification()
 {
   currentTimeStamp = millis();
+  
   if(currentTimeStamp - last_notify > CONSECUTIVE_NOTIFICATION_DELAY)
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
@@ -1797,7 +1836,7 @@ void dispatchPendingNotification()
       Log.trace("Running Notification service" CR);
 
       if(WiFi.status()== WL_CONNECTED)
-      { 
+      {
         posting = true;
         
         Notification notice;
@@ -1818,7 +1857,7 @@ void dispatchPendingNotification()
       else 
       {
         Log.error("WiFi not connected, cannot post data" CR);
-        lcd_print("WIFI DISCONNECTED", 0, 1, true, true);
+        lcd_print(lcd, "WIFI DISCONNECTED", 0, 1, true, true);
       }
       
       posting = false;
