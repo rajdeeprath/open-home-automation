@@ -1482,7 +1482,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
 
    if(willOverflow())
    {
-      lcd_print(lcd, " WILL OVERFLOW ", 0, 1, true);
+      //lcd_print(lcd, " WILL OVERFLOW ", 0, 1, true);
     
       if(overFlowAlarmStart == 0){
         overFlowAlarmStart = currentTimeStamp;
@@ -1510,7 +1510,7 @@ void updateIndicators(int &low, int &mid, int &high, int &pump)
    // update system sensor
    if(SYSTEM_ERROR)
    {
-      lcd_print(lcd, " SYSTEM ERROR ", 0, 1, true, true);
+      //lcd_print(lcd, " SYSTEM ERROR ", 0, 1, true, true);
       blinkSystemLed();
       beeperOn();
    }
