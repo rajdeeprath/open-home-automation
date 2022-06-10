@@ -9,9 +9,9 @@
 #define rxGSM D5
 #define txGSM D6
 
-const String phone = "+919836555754";
+const String COUNTRY_CODE = "+91";
 long CALL_TIME_THRESHOLD = 20000;
-const String capailities = "{\"name\":\"HMU-CALL-001\",\"devices\":{\"SWITCH1\":{\"get\":\"\/switch\/1\",\"set\":\"\/switch\/1\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH2\":{\"get\":\"\/switch\/2\",\"set\":\"\/switch\/2\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]},\"SWITCH3\":{\"get\":\"\/switch\/3\",\"set\":\"\/switch\/3\/set\",\"type\":\"switch\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"get\":\"\/switch\/all\",\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+const String capabilities = "{\"name\":\"HMU-CALL-001\",\"devices\":{\"SIM\":{\"get\":\"\/call\/get\",\"set\":\"\/call\/set\",\"type\":\"sim\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 boolean debug=true;
 boolean resetFlag=false;
 boolean calling=false;
@@ -20,9 +20,10 @@ int eeAddress = 0;
 long current_timestamp = 0;
 
 struct Settings {
+   int callState = 0;   
    long lastCallTime = 0;
-   int reset = 0;
-   int callState = 0;
+   long lastupdate = 0;
+   int reset = 0;   
    int phone_length = 0;
    char phone[15] = "";
 };
@@ -34,7 +35,7 @@ std::unique_ptr<ESP8266WebServer> server;
 
 
 void handleRoot() {
-  server->send(200, "application/json", capailities);
+  server->send(200, "application/json", capabilities);
 }
 
 
@@ -108,8 +109,15 @@ void doCall()
 void cancelCall()
 {
   Log.notice("Cancel call requested." CR);
-  server->send(200, "text/plain", "OK");
+  server->send(200, "text/plain", "CALLING=" + String(conf.callState));
   calling = false;
+}
+
+
+void getCallState()
+{
+  Log.notice("Returning call state." CR);
+  server->send(200, "text/plain", "CALLING=" + String(conf.callState));
 }
 
 
@@ -129,6 +137,20 @@ void setup() {
 
   sim800.println("AT"); //Once the handshake test is successful, it will back to OK
   updateSerial();
+
+  server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
+
+  server->on("/", handleRoot);
+  server->on("/reset", handleReset);
+  server->on("/call/get", getCallState);
+  server->on("/call/set", doCall);
+  server->on("/call/cancel/set", cancelCall);
+  
+  server->onNotFound(handleNotFound);
+
+  server->begin();
+  Log.notice("HTTP server started" CR);
+  Log.notice("IP = %s" CR, WiFi.localIP());
 }
 
 
@@ -141,7 +163,7 @@ void loop()
     if(conf.callState == 1) // if call init state then set it to progress and invoke sim800L
     {
       Log.notice("Triggering SIM800L to initiate call!" CR);
-      String atcommand = "ATD+ " + String(conf.phone) + ";";
+      String atcommand = "ATD+ " + COUNTRY_CODE + String(conf.phone) + ";";
       sim800.println(atcommand);
       conf.callState = 2; // in progress      
     }
@@ -194,10 +216,135 @@ boolean isValidNumber(String str)
 {  
   for(byte i=0;i<str.length();i++)
   {
-    if((i == 0 && (str.charAt(i) != '+')) || (!isDigit(str.charAt(i))))
+    if(!isDigit(str.charAt(i)))
     {
       return false;
     }
   }
   return true;
+}
+
+
+
+
+/**
+ * Erases eeprom of all settings
+ */
+void eraseSettings()
+{
+  EEPROM.begin(512);
+  
+  debugPrint("Erasing eeprom...");
+  
+  for (int i = 0; i < 512; i++){
+    EEPROM.write(i, 0);
+  }
+
+  EEPROM.commit();
+  EEPROM.end();
+}
+
+
+
+
+/**
+ * Writes active configuration  to eeprom
+ */
+void writeSettings() 
+{
+  EEPROM.begin(512);
+  
+  eeAddress = 0;
+  conf.lastupdate = millis();
+
+  EEPROM.write(eeAddress, conf.callState);
+  eeAddress++;  
+  EEPROM.write(eeAddress, conf.lastCallTime);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.lastupdate);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.reset);
+  eeAddress++;
+  EEPROM.write(eeAddress, conf.phone_length);
+
+  eeAddress++;
+  writeEEPROM(eeAddress, conf.phone_length, conf.phone);
+  EEPROM.commit();
+
+  EEPROM.end();
+  
+  debugPrint("Conf saved");
+  debugPrint(String(conf.callState));
+  debugPrint(String(conf.lastCallTime));
+  debugPrint(String(conf.lastupdate));
+  debugPrint(String(conf.reset));
+  debugPrint(String(conf.phone_length));
+  debugPrint(String(conf.phone));
+}
+
+
+/**
+ * Write string to eeprom
+ */
+void writeEEPROM(int startAdr, int len, char* writeString) {
+  //yield();
+  for (int i = 0; i < len; i++) {
+    EEPROM.write(startAdr + i, writeString[i]);
+  }
+}
+
+
+
+
+/**
+ * Reads last written configuration object from eeprom
+ */
+void readSettings() 
+{
+  EEPROM.begin(512);
+  
+  eeAddress = 0;
+  
+  conf.callState = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.lastCallTime = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.lastupdate = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.reset = EEPROM.read(eeAddress);
+  eeAddress++;
+  conf.phone_length = EEPROM.read(eeAddress);
+
+  eeAddress++;
+  readEEPROM(eeAddress, conf.phone_length, conf.phone);
+
+  EEPROM.end();
+
+  debugPrint("Conf read");
+  debugPrint(String(conf.callState));
+  debugPrint(String(conf.lastCallTime));
+  debugPrint(String(conf.lastupdate));
+  debugPrint(String(conf.reset));
+  debugPrint(String(conf.phone_length));
+  debugPrint(String(conf.phone));
+}
+
+/**
+ * Reads string from eeprom
+ */
+void readEEPROM(int startAdr, int maxLength, char* dest) {
+
+  for (int i = 0; i < maxLength; i++) {
+    dest[i] = char(EEPROM.read(startAdr + i));
+  }
+}
+
+
+
+
+/**
+ * Prints message to serial
+ */
+void debugPrint(String message){
+  Log.trace("%s" CR, message);
 }
