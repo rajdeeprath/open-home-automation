@@ -4,6 +4,7 @@
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
+#include <ArduinoLog.h>
 
 #define rxGSM D5
 #define txGSM D6
@@ -62,15 +63,21 @@ void handleNotFound() {
 
 void doCall()
 { 
+  Log.notice("Call requested." CR);
+  
   if(server->hasArg("phone"))
   {
     String phone = String(server->arg("phone"));
 
     if(isValidNumber(phone))
     { 
+      Log.notice("Number %s is valid." CR, phone);
+      
       if(!calling)
       {
         server->send(200, "text/plain", "CALLING=" + phone);
+
+        Log.notice("Call init." CR);
         
         calling = true;
         conf.callState = 1; conf.lastCallTime = millis(); conf.phone_length = phone.length();
@@ -79,16 +86,19 @@ void doCall()
       }
       else
       {
+        Log.error("Call already in progress." CR);
         server->send(400, "text/plain", "Call in progress");
       }
     }
     else
     {
+      Log.error("Invalid phone number." CR);
       server->send(400, "text/plain", "Invalid phone number");
     }
   }
   else
   {
+    Log.error("No phone number provided!" CR);
     server->send(400, "text/plain", "No phone number provided");
   }
 }
@@ -97,20 +107,22 @@ void doCall()
 
 void cancelCall()
 {
+  Log.notice("Cancel call requested." CR);
   server->send(200, "text/plain", "OK");
   calling = false;
 }
 
 
 void setup() {
+  Log.notice("Starting.." CR);    
+  delay(15000);
+  
   Serial.begin(115200);
-  Serial.println("Arduino serial initialize");
-
-  Serial.println("Starting...");
-  delay(15000);  
+  Log.begin(LOG_LEVEL_NOTICE, &Serial);  
+  Log.notice("Serial initialize!" CR);    
   
   sim800.begin(9600);
-  Serial.println("SIM800L serial initialize");
+  Log.notice("SIM800L serial initialize!" CR);
 
   sim800.listen();
   delay(1000);
@@ -127,18 +139,22 @@ void loop()
   if(calling)
   {  
     if(conf.callState == 1) // if call init state then set it to progress and invoke sim800L
-    {   
+    {
+      Log.notice("Triggering SIM800L to initiate call!" CR);
       String atcommand = "ATD+ " + String(conf.phone) + ";";
       sim800.println(atcommand);
-      conf.callState = 2; // in progress
+      conf.callState = 2; // in progress      
     }
 
     // if call in init or in progress state for more than THRESHOLD then cancel call
     if(conf.callState == 1 || conf.callState == 2) 
     {
+      Log.notice("Calling in progress.." CR);      
       if(current_timestamp - conf.lastCallTime > CALL_TIME_THRESHOLD)
       {
+        Log.notice("Calling timeout. Ending call" CR);
         calling = false; 
+        Log.notice("Call ended." CR);
       }     
     }
   }
@@ -147,10 +163,14 @@ void loop()
     // if call in init or in progress state for more than THRESHOLD then abort call
     if(conf.callState != 0) 
     {
+      Log.notice("Hanging up call." CR);
       conf.callState = 0;
       sim800.println("ATH"); //hang up        
     }
   }
+
+  delay(3);
+  server->handleClient();
 }
 
 
