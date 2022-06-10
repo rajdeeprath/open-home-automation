@@ -1,5 +1,5 @@
 #include <SoftwareSerial.h>
-#include <WiFiManager.h>
+#include <WiFiManager.h> // https://github.com/tzapu/WiFiManager
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -11,7 +11,9 @@
 
 const String COUNTRY_CODE = "+91";
 long CALL_TIME_THRESHOLD = 20000;
-const String capabilities = "{\"name\":\"HMU-CALL-001\",\"devices\":{\"SIM\":{\"get\":\"\/call\/get\",\"set\":\"\/call\/set\",\"type\":\"sim\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+const String NAME = "HMU-CALL-001";
+const String AP_PASS = "iot@123!";
+const String capabilities = "{\"name\":\" " + NAME + "\",\"devices\":{\"SIM\":{\"get\":\"\/call\/get\",\"set\":\"\/call\/set\",\"type\":\"sim\",\"states\":[\"on\",\"off\"]}},\"global\":{\"actions\":{\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 boolean debug=true;
 boolean resetFlag=false;
 boolean calling=false;
@@ -31,7 +33,7 @@ struct Settings {
 Settings conf ={};
 SoftwareSerial sim800(rxGSM, txGSM);
 std::unique_ptr<ESP8266WebServer> server;
-
+WiFiManager wm;
 
 
 void handleRoot() {
@@ -138,19 +140,38 @@ void setup() {
   sim800.println("AT"); //Once the handshake test is successful, it will back to OK
   updateSerial();
 
-  server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
+  char APNAME[NAME.length() + 1];
+  NAME.toCharArray(APNAME, NAME.length() + 1);
 
-  server->on("/", handleRoot);
-  server->on("/reset", handleReset);
-  server->on("/call/get", getCallState);
-  server->on("/call/set", doCall);
-  server->on("/call/cancel/set", cancelCall);
+  char PASS[AP_PASS.length() + 1];
+  AP_PASS.toCharArray(PASS, AP_PASS.length() + 1);
   
-  server->onNotFound(handleNotFound);
+  wm.setConfigPortalBlocking(false);
+  wm.setConfigPortalTimeout(60);
+  
+  //automatically connect using saved credentials if they exist
+  //If connection fails it starts an access point with the specified name
+  if(wm.autoConnect(APNAME, PASS)){
+      Log.notice("connected...yeey :)");
 
-  server->begin();
-  Log.notice("HTTP server started" CR);
-  Log.notice("IP = %s" CR, WiFi.localIP());
+      server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
+      
+      server->on("/", handleRoot);
+      server->on("/reset", handleReset);
+      server->on("/call/get", getCallState);
+      server->on("/call/set", doCall);
+      server->on("/call/cancel/set", cancelCall);      
+      server->onNotFound(handleNotFound);      
+      server->begin();
+      
+      Serial.print("IP = ");      
+      Serial.println(WiFi.localIP());
+      Log.notice("HTTP server started" CR);
+  }
+  else 
+  {
+      Log.warning("Configportal running");
+  }  
 }
 
 
@@ -171,7 +192,7 @@ void loop()
     // if call in init or in progress state for more than THRESHOLD then cancel call
     if(conf.callState == 1 || conf.callState == 2) 
     {
-      Log.notice("Calling in progress.." CR);      
+      //Log.trace("Calling in progress.." CR);      
       if(current_timestamp - conf.lastCallTime > CALL_TIME_THRESHOLD)
       {
         Log.notice("Calling timeout. Ending call" CR);
@@ -190,9 +211,15 @@ void loop()
       sim800.println("ATH"); //hang up        
     }
   }
-
-  delay(3);
-  server->handleClient();
+  
+  wm.process();  
+  
+  
+  if(WiFi.status() == WL_CONNECTED)
+  {
+    delay(3);
+    server->handleClient();
+  }  
 }
 
 
