@@ -9,7 +9,7 @@
 #define rxGSM D5
 #define txGSM D6
 
-const String COUNTRY_CODE = "+91";
+const String COUNTRY_CODE = "91";
 long CALL_TIME_THRESHOLD = 20000;
 const String NAME = "HMU-CALL-001";
 const String AP_PASS = "iot@123!";
@@ -124,21 +124,31 @@ void getCallState()
 
 
 void setup() {
-  Log.notice("Starting.." CR);    
-  delay(15000);
+  Log.notice("Starting.." CR);
   
-  Serial.begin(115200);
+  Serial.begin(9600);
   Log.begin(LOG_LEVEL_NOTICE, &Serial);  
   Log.notice("Serial initialize!" CR);    
   
   sim800.begin(9600);
   Log.notice("SIM800L serial initialize!" CR);
 
-  sim800.listen();
-  delay(1000);
+  //sim800.listen();
+  //delay(1000);
 
-  sim800.println("AT"); //Once the handshake test is successful, it will back to OK
-  updateSerial();
+  Serial.println("Initializing...");
+  
+  sim800.println("AT");
+  waitForResponse();
+
+  sim800.println("ATE1");
+  waitForResponse();
+
+  sim800.println("AT+CMGF=1");
+  waitForResponse();
+
+  sim800.println("AT+CNMI=1,2,0,0,0");
+  waitForResponse();
 
   char APNAME[NAME.length() + 1];
   NAME.toCharArray(APNAME, NAME.length() + 1);
@@ -174,7 +184,6 @@ void setup() {
   }  
 }
 
-
 void loop() 
 {
   current_timestamp = millis();
@@ -182,11 +191,13 @@ void loop()
   if(calling)
   {  
     if(conf.callState == 1) // if call init state then set it to progress and invoke sim800L
-    {
+    {      
       Log.notice("Triggering SIM800L to initiate call!" CR);
-      String atcommand = "ATD+ " + COUNTRY_CODE + String(conf.phone) + ";";
-      sim800.println(atcommand);
-      conf.callState = 2; // in progress      
+      String atcommand = "ATD+" + COUNTRY_CODE + String(conf.phone) + ";";
+      sim800.println(atcommand);      
+      delay(1000);
+      Log.notice("Setting call state to progress" CR);
+      conf.callState = 2; // in progress
     }
 
     // if call in init or in progress state for more than THRESHOLD then cancel call
@@ -208,34 +219,28 @@ void loop()
     {
       Log.notice("Hanging up call." CR);
       conf.callState = 0;
-      sim800.println("ATH"); //hang up        
+      sim800.println("ATH"); //hang up
     }
   }
   
   wm.process();  
   
-  
-  if(WiFi.status() == WL_CONNECTED)
-  {
+  if(WiFi.status() == WL_CONNECTED){
     delay(3);
     server->handleClient();
-  }  
-}
-
-
-
-void updateSerial()
-{
-  delay(500);
-  while (Serial.available()) 
-  {
-    sim800.write(Serial.read());//Forward what Serial received to Software Serial Port
-  }
-  while(sim800.available()) 
-  {
-    Serial.write(sim800.read());//Forward what Software Serial received to Serial Port
   }
 }
+
+
+
+void waitForResponse(){
+  delay(1000);
+  while(sim800.available()){
+    Serial.println(sim800.readString());
+  }
+  sim800.read();
+}
+
 
 
 
