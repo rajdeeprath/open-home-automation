@@ -20,6 +20,7 @@ boolean calling=false;
 int callState = 0; // 0 | 1 | 2
 int eeAddress = 0;
 long current_timestamp = 0;
+long init_time = 0;
 
 struct Settings {
    int callState = 0;   
@@ -124,7 +125,8 @@ void getCallState()
 
 
 void setup() {
-  Log.notice("Starting.." CR);
+  Log.notice("Starting.." CR);  
+  init_time = millis();
   
   Serial.begin(9600);
   Log.begin(LOG_LEVEL_NOTICE, &Serial);  
@@ -148,6 +150,15 @@ void setup() {
   waitForResponse();
 
   sim800.println("AT+CNMI=1,2,0,0,0");
+  waitForResponse();
+
+  sim800.println("AT+CPAS");
+  waitForResponse();
+
+  sim800.println("AT+CGREG?");
+  waitForResponse();
+
+  sim800.println("AT+CSQ");
   waitForResponse();
 
   char APNAME[NAME.length() + 1];
@@ -187,47 +198,54 @@ void setup() {
 void loop() 
 {
   current_timestamp = millis();
-  
-  if(calling)
-  {  
-    if(conf.callState == 1) // if call init state then set it to progress and invoke sim800L
-    {      
-      Log.notice("Triggering SIM800L to initiate call!" CR);
-      String atcommand = "ATD+" + COUNTRY_CODE + String(conf.phone) + ";";
-      sim800.println(atcommand);      
-      delay(1000);
-      Log.notice("Setting call state to progress" CR);
-      conf.callState = 2; // in progress
-    }
 
-    // if call in init or in progress state for more than THRESHOLD then cancel call
-    if(conf.callState == 1 || conf.callState == 2) 
-    {
-      //Log.trace("Calling in progress.." CR);      
-      if(current_timestamp - conf.lastCallTime > CALL_TIME_THRESHOLD)
-      {
-        Log.notice("Calling timeout. Ending call" CR);
-        calling = false; 
-        Log.notice("Call ended." CR);
-      }     
-    }
+  if(resetFlag)
+  {
+    ESP.restart();
   }
   else
   {
-    // if call in init or in progress state for more than THRESHOLD then abort call
-    if(conf.callState != 0) 
-    {
-      Log.notice("Hanging up call." CR);
-      conf.callState = 0;
-      sim800.println("ATH"); //hang up
+    if(calling)
+    {  
+      if(conf.callState == 1) // if call init state then set it to progress and invoke sim800L
+      {      
+        Log.notice("Triggering SIM800L to initiate call!" CR);
+        String atcommand = "ATD+" + COUNTRY_CODE + String(conf.phone) + ";";
+        sim800.println(atcommand);      
+        waitForResponse();
+        Log.notice("Setting call state to progress" CR);
+        conf.callState = 2; // in progress
+      }
+      
+      // if call in init or in progress state for more than THRESHOLD then cancel call
+      if(conf.callState == 1 || conf.callState == 2) 
+      {
+        //Log.trace("Calling in progress.." CR);      
+        if(current_timestamp - conf.lastCallTime > CALL_TIME_THRESHOLD)
+        {
+          Log.notice("Calling timeout. Ending call" CR);
+          calling = false; 
+          Log.notice("Call ended." CR);
+        }     
+      }
     }
-  }
-  
-  wm.process();  
-  
-  if(WiFi.status() == WL_CONNECTED){
-    delay(3);
-    server->handleClient();
+    else
+    {
+      // if call in init or in progress state for more than THRESHOLD then abort call
+      if(conf.callState != 0) 
+      {
+        Log.notice("Hanging up call." CR);
+        conf.callState = 0;
+        sim800.println("ATH"); //hang up
+      }
+    }
+    
+    wm.process();  
+    
+    if(WiFi.status() == WL_CONNECTED){
+      delay(3);
+      server->handleClient();
+    }  
   }
 }
 
