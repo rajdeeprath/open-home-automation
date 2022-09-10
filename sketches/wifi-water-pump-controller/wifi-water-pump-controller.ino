@@ -20,7 +20,7 @@
 #define NOTICE_LIMIT 5
 
 const String NAME="HMU-PC-001";
-const char* AP_PASS="iotpassword";
+const char* AP_PASS="iot@123!";
 const char* serverName = "http://iot.flashvisions.com";
 
 float digital_adc_voltage;
@@ -67,7 +67,7 @@ long ACCIDENT_GUARD_RUN_DELAY = 4000;
 long BEEPER_DELAY = 1500;
 long PUMP_CONNECTION_SENSOR_NOISE_THRESHOLD = 2000;
 
-String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String CAPABILITIES = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    int relay;
@@ -128,7 +128,8 @@ void configModeCallback (WiFiManager *myWiFiManager)
  * Handle root visit
  */
 void handleRoot() {
-  server->send(200, "application/json", capailities);
+  Log.notice("handleRoot called");
+  server->send(200, "application/json", CAPABILITIES);
 }
 
 
@@ -908,7 +909,7 @@ void setup() {
 
   Serial.begin(9600); 
   Log.begin(LOG_LEVEL_NOTICE, &Serial);  
-  Log.notice("Serial initialize!" CR);    
+  Log.notice("Serial initialize!" CR);
   
   queue.setPrinter (Serial); 
   
@@ -948,6 +949,7 @@ void setup() {
   wifiManager.setConfigPortalBlocking(false);
   wifiManager.setAPCallback(configModeCallback);
   wifiManager.setConfigPortalTimeout(180);    
+  wifiManager.setConnectTimeout(120);
 
 
   gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
@@ -1020,8 +1022,7 @@ void loop()
         inited = true;
         initSettings();
     }
-
-    
+   
 
     if (conf.reset == 1)
     {
@@ -1038,9 +1039,9 @@ void loop()
       dispatchPendingNotification();
       invalidateUserRequest();
       
-      delay(3);
+      wifiManager.process();
 
-      if(millis() - system_start_time > wait_time)
+      if((millis() - system_start_time > wait_time) && (WiFi.status()== WL_CONNECTED))
       {
         server->handleClient();
       }
@@ -1122,6 +1123,33 @@ void initSettings()
 
   // start state
   LIQUID_LEVEL_OK = true;
+
+  writeSettings();
+}
+
+
+
+void set_defaults()
+{  
+  Log.trace("Setting defaults");
+  
+  String url = "0.0.0.0";
+  char tmp[url.length() + 1];
+  url.toCharArray(tmp, url.length() + 1);
+
+  conf.endpoint_length = url.length();
+  memset(conf.endpoint, 0, sizeof(conf.endpoint));
+  strncpy(conf.endpoint, tmp, strlen(tmp));
+  
+  conf.notify = 0;
+  conf.relay_runtime = DEFAULT_RUNTIME;
+
+  system_start_time = millis();
+  conf.relay=0;
+  conf.led=1;
+  conf.lastupdate = 0;
+  conf.relay_start = 0;
+  conf.relay_stop = 0;
 
   writeSettings();
 }
