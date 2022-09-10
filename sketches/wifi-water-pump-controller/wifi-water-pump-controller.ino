@@ -110,11 +110,15 @@ boolean posting;
 
 
 
+/**
+ * Gets called when config portal is running
+ */
+
 void configModeCallback (WiFiManager *myWiFiManager) 
 {
-  Log.info("Inside configModeCallback");
-  Log.info("IP address: : %d.%d.%d.%d" CR, WiFi.softAPIP()[0],  WiFi.softAPIP()[1], WiFi.softAPIP()[2], WiFi.softAPIP()[3]);
-  Log.info("ConfigPortalSSID => %s", myWiFiManager->getConfigPortalSSID());
+  Log.trace("Inside configModeCallback");
+  Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.softAPIP()[0],  WiFi.softAPIP()[1], WiFi.softAPIP()[2], WiFi.softAPIP()[3]);
+  Log.notice("ConfigPortalSSID => %s", myWiFiManager->getConfigPortalSSID());
 }
 
 
@@ -126,6 +130,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
 void handleRoot() {
   server->send(200, "application/json", capailities);
 }
+
 
 
 
@@ -949,7 +954,7 @@ void setup() {
   {
     network = true;
     Log.notice("Station connected ");
-    Log.info("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+    Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
     init_server();
   });
   
@@ -969,7 +974,7 @@ void setup() {
   if(wm_connected)
   {
     Serial.println("connected...yeey :)");
-    Log.info("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+    Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
     network = true;
   }else
   {
