@@ -28,6 +28,7 @@ float MAX_VOLTAGE = 1023.0;
 long current_time;
 long lastOpenSwitchDetect;
 long timeSinceLastOpenSwitch;
+long adcLastReadTime;
 boolean switchOpen;
 boolean _connected = false;
 boolean _connecting = false;
@@ -118,9 +119,9 @@ boolean posting;
 
 void configModeCallback (WiFiManager *myWiFiManager) 
 {
-  Log.trace("Inside configModeCallback");
+  Log.trace("Inside configModeCallback" CR);
   Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.softAPIP()[0],  WiFi.softAPIP()[1], WiFi.softAPIP()[2], WiFi.softAPIP()[3]);
-  Log.notice("ConfigPortalSSID => %s", myWiFiManager->getConfigPortalSSID());
+  Log.notice("ConfigPortalSSID => %s" CR, myWiFiManager->getConfigPortalSSID());
 }
 
 
@@ -130,7 +131,7 @@ void configModeCallback (WiFiManager *myWiFiManager)
  * Handle root visit
  */
 void handleRoot() {
-  Log.notice("handleRoot called");
+  Log.trace("handleRoot called" CR);
   server->send(200, "application/json", CAPABILITIES);
 }
 
@@ -421,7 +422,7 @@ void setNotifyURL()
  */
 void notifyURL(String message)
 {
-  Log.trace("Preparing notification");
+  Log.trace("Preparing notification" CR);
   
   Notification notice = {};
   notice.relay = conf.relay;
@@ -442,7 +443,7 @@ void enqueueNotification(struct Notification notice)
    notice.queue_time = millis();
 
    if(queue.count() < NOTICE_LIMIT){
-    Log.trace("Pushing notification to queue");
+    Log.trace("Pushing notification to queue" CR);
     queue.enqueue(notice);
    }
 }
@@ -474,7 +475,7 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      Log.trace("Running Notification service");
+      Log.trace("Running Notification service" CR);
       Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
       
       Notification notice = queue.dequeue();
@@ -510,20 +511,20 @@ void runPump()
    {
       if(millis() - conf.relay_start > CONSECUTIVE_PUMP_RUN_DELAY)
       {
-        Log.trace("Starting pump!");
+        Log.trace("Starting pump!" CR);
         switchOnCompositeRelay();
       }
       else
       {
         msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
-        Log.trace(msg);
+        Log.trace(msg CR);
         notifyURL(msg);
       }
    }
    else
    {
         msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
-        Log.trace(msg);
+        Log.trace(msg CR);
         notifyURL(msg);
    }
 }
@@ -537,7 +538,7 @@ void stopPump()
 {
   if(conf.relay == 1)
   { 
-    Log.trace("Stopping pump!");
+    Log.trace("Stopping pump!" CR);
     switchOffCompositeRelay();
   }
 }
@@ -589,7 +590,7 @@ void checkUnauthorizedRun()
         {
           systemFault = true;
           
-          Log.trace(msg);      
+          Log.trace(msg CR);
           notifyURL(msg); 
         }
         else
@@ -619,7 +620,7 @@ void checkPumpRunningStatus(){
         lastPumpStopFeedbackTime = millis();
                 
         msg = "Pump stopped!";
-        Log.trace(msg);
+        Log.trace(msg CR);
         
         // notify status
         notifyURL(msg);
@@ -636,7 +637,7 @@ void checkPumpRunningStatus(){
           lastPumpStartFeedbackTime = millis();
         
           msg = "Pump running!";
-          Log.trace(msg);
+          Log.trace(msg CR);
 
           // notify status
           notifyURL(msg);
@@ -740,15 +741,19 @@ void checkAndRespondToRelayConditionSafeGuard()
  */
 void relayConditionSafeGuard()
 {
+  current_time = millis();
+
+  if(current_time - adcLastReadTime < 100){
+    return;
+  }
+  
   // read in liquid level from ADC
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
+  adcLastReadTime = current_time;
 
   // calculate digital voltage
   digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);  
-  
-  current_time = millis();
-  
-  Log.trace("Analog Voltage = %d, Digital Voltage = %D" CR, liquidLevelSensorReadIn, digital_adc_voltage);  
+  //Log.trace("Analog Voltage = %d, Digital Voltage = %D" CR, liquidLevelSensorReadIn, digital_adc_voltage);  
 
   // if digital voltage greater than 2.7 take action ->
   if(digital_adc_voltage >= 2.7)
@@ -758,7 +763,7 @@ void relayConditionSafeGuard()
     {
       switchOpen = true; // mark switch as open
       lastOpenSwitchDetect = current_time; // remember the time when it was opened
-      Log.trace("switch open");   
+      Log.trace("switch open" CR);   
     }
   }
   else // if digital voltage is less then 2.7 take action ->
@@ -768,13 +773,13 @@ void relayConditionSafeGuard()
     {
       switchOpen = false; // mark switch as closed
       lastOpenSwitchDetect = current_time + 1000; // forward last open time into future to fool `timeSinceLastOpenSwitch`
-      Log.trace("switch closed");
+      Log.trace("switch closed" CR);
     }
   }
 
 
   timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect; // how long was it since we have a open switch
-  //Log.trace("timeSinceLastOpenSwitch " + String(timeSinceLastOpenSwitch));  
+  //Log.trace("timeSinceLastOpenSwitch = %l" + timeSinceLastOpenSwitch);  
   
   if(switchOpen && timeSinceLastOpenSwitch >= 500) // if switch is open and it has been that way for more then 500m ms (normalising false values)
   {
@@ -797,13 +802,12 @@ void relayConditionSafeGuard()
 
 
   /****************************************************************/
-  time_over_check = millis();
 
   // if relay was on check if it should be autoclosed now
   if(conf.relay == 1)
   {
     max_runtime = conf.relay_runtime * 1000; // calculate max runtime in ms
-    timeover = ((time_over_check - conf.relay_start) > max_runtime); // check time elapsed since pump relay turned on
+    timeover = ((current_time - conf.relay_start) > max_runtime); // check time elapsed since pump relay turned on
 
     //Log.trace("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
 
@@ -822,7 +826,7 @@ void relayConditionSafeGuard()
  */
 void switchOffCompositeRelay()
 {
-    Log.trace("Turning off control pins");
+    Log.trace("Turning off control pins" CR);
     
     conf.relay=0;
     conf.relay_stop = millis();
@@ -837,7 +841,7 @@ void switchOffCompositeRelay()
  */
 void switchOnCompositeRelay()
 {
-    Log.trace("Turning on control pins");
+    Log.trace("Turning on control pins" CR);
   
     conf.relay=1;
     conf.relay_start = millis();    
@@ -923,12 +927,13 @@ void setup() {
   Serial.begin(9600); 
   Log.begin(LOG_LEVEL_TRACE, &Serial);  
   Log.notice("Serial initialize!" CR);  
+  
   queue.setPrinter (Serial); 
   
   // Check for reset and do reset routine
   readSettings();  
   if(conf.reset == 1){
-    Log.trace("Reset flag detected!");    
+    Log.trace("Reset flag detected!" CR);
     doReset();
   }
 
@@ -959,7 +964,8 @@ void setup() {
   WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP   
     
   wifiManager.setAPCallback(configModeCallback);
-  wifiManager.setConfigPortalTimeout(180);
+  wifiManager.setConfigPortalTimeout(120);
+  wifiManager.setConfigPortalBlocking(false);
 
 
   gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
@@ -1062,6 +1068,7 @@ void init_server()
  */
 void loop() 
 {
+    wifiManager.process();
     
     if(!inited){
         inited = true;
@@ -1144,7 +1151,7 @@ void initSettings()
 
   if(conf.relay_runtime <= 0)
   {
-    Log.trace("Setting defaults");
+    Log.trace("Setting defaults" CR);
     
     String url = "0.0.0.0";
     char tmp[url.length() + 1];
@@ -1175,7 +1182,7 @@ void initSettings()
 
 void set_defaults()
 {  
-  Log.trace("Setting defaults");
+  Log.trace("Setting defaults" CR);
   
   String url = "0.0.0.0";
   char tmp[url.length() + 1];
@@ -1208,7 +1215,7 @@ void eraseSettings()
 {
   EEPROM.begin(512);
   
-  Log.trace("Erasing eeprom...");
+  Log.trace("Erasing eeprom..." CR);
   
   for (int i = 0; i < 512; i++){
     EEPROM.write(i, 0);
@@ -1255,7 +1262,7 @@ void writeSettings()
   EEPROM.commit();
   EEPROM.end();
   
-  Log.trace("Conf saved");
+  Log.trace("Conf saved" CR);
   Log.trace("relay => %d" CR, conf.relay);
   Log.trace("relay_runtime => %d" CR, conf.relay_runtime);
   Log.trace("led => %d" CR, conf.led);
@@ -1314,7 +1321,7 @@ void readSettings()
 
   EEPROM.end();
 
-  Log.trace("Conf read");
+  Log.trace("Conf read" CR);
   Log.trace("relay => %d" CR, conf.relay);
   Log.trace("relay_runtime => %d" CR, conf.relay_runtime);
   Log.trace("led => %d" CR, conf.led);
