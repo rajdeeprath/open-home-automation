@@ -61,7 +61,7 @@ boolean beeping;
 long lastPumpStartFeedbackTime;
 long lastPumpStopFeedbackTime;
 
-long INIT_DELAY = 15000;
+long INIT_DELAY = 20000;
 long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 long OPERATION_FEEDBACK_CHECK_DELAY = 2000;
