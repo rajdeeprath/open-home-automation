@@ -19,18 +19,20 @@
 
 #define NOTICE_LIMIT 5
 
-const String NAME="HMU-PC-001";
+const char* NAME="HMU-PC-001";
 const char* AP_PASS="iot@123!";
-const char* serverName = "http://iot.flashvisions.com";
 
-float digital_adc_voltage;
+double digital_adc_voltage;
 float OP_VOLTAGE = 3.3;
 float MAX_VOLTAGE = 1023.0;
 long current_time;
 long lastOpenSwitchDetect;
 long timeSinceLastOpenSwitch;
 boolean switchOpen;
-boolean network;
+boolean _connected = false;
+boolean _connecting = false;
+boolean webserver_inited = false;
+
 int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
@@ -67,7 +69,7 @@ long ACCIDENT_GUARD_RUN_DELAY = 4000;
 long BEEPER_DELAY = 1500;
 long PUMP_CONNECTION_SENSOR_NOISE_THRESHOLD = 2000;
 
-String CAPABILITIES = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String CAPABILITIES = "{\"name\":\"" + String(NAME) + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    int relay;
@@ -558,7 +560,7 @@ void checkUnauthorizedRun()
         /* Check for possible fault */    
         if(!PUMP_RUN_REQUEST_TOKEN)
         {
-          Log.trace("Running accident prevention & warning routine checks!!");         
+          //Log.trace("Running accident prevention & warning routine checks!!");         
           
           if(PUMP_CONNECTION_ON) // Check feedback
           {
@@ -738,48 +740,58 @@ void checkAndRespondToRelayConditionSafeGuard()
  */
 void relayConditionSafeGuard()
 {
+  // read in liquid level from ADC
   liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
+
+  // calculate digital voltage
   digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);  
+  
   current_time = millis();
   
-  //Log.trace("Analog Voltage = " + String(liquidLevelSensorReadIn) + "  Digital Voltage= " + String(digital_adc_voltage));
- 
+  Log.trace("Analog Voltage = %d, Digital Voltage = %D" CR, liquidLevelSensorReadIn, digital_adc_voltage);  
+
+  // if digital voltage greater than 2.7 take action ->
   if(digital_adc_voltage >= 2.7)
   {
+    // if switch was not open then it is opened now
     if(!switchOpen)
     {
-      switchOpen = true;
-      lastOpenSwitchDetect = current_time;
+      switchOpen = true; // mark switch as open
+      lastOpenSwitchDetect = current_time; // remember the time when it was opened
       Log.trace("switch open");   
     }
   }
-  else
+  else // if digital voltage is less then 2.7 take action ->
   {
+    // if switch was open then mark it as closed now
     if(switchOpen)
     {
-      switchOpen = false;
-      lastOpenSwitchDetect = current_time + 1000; // forward into future
+      switchOpen = false; // mark switch as closed
+      lastOpenSwitchDetect = current_time + 1000; // forward last open time into future to fool `timeSinceLastOpenSwitch`
       Log.trace("switch closed");
     }
   }
 
-  timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect;
-  //Log.trace("timeSinceLastOpenSwitch " + String(timeSinceLastOpenSwitch));
+
+  timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect; // how long was it since we have a open switch
+  //Log.trace("timeSinceLastOpenSwitch " + String(timeSinceLastOpenSwitch));  
   
-  if(switchOpen && timeSinceLastOpenSwitch >= 500) // open magnetic switch for 1 whole second
+  if(switchOpen && timeSinceLastOpenSwitch >= 500) // if switch is open and it has been that way for more then 500m ms (normalising false values)
   {
+    // if liquid level was ok, now mark it as not ok
     if(LIQUID_LEVEL_OK)
     {
-      ledOn();
-      LIQUID_LEVEL_OK = false;
+      ledOn(); // turn on indicator
+      LIQUID_LEVEL_OK = false; // liquid level not ok
     } 
   }
-  else // closed magnetic switch
+  else // if switch is closed
   {
+    // if liquid level was not ok, now mark it as ok
     if(!LIQUID_LEVEL_OK)
     {
-      ledOff();
-      LIQUID_LEVEL_OK = true;
+      ledOff(); // turn off indicator
+      LIQUID_LEVEL_OK = true; // liquid level ok
     }
   }
 
@@ -787,13 +799,15 @@ void relayConditionSafeGuard()
   /****************************************************************/
   time_over_check = millis();
 
+  // if relay was on check if it should be autoclosed now
   if(conf.relay == 1)
   {
-    max_runtime = conf.relay_runtime * 1000;
-    timeover = ((time_over_check - conf.relay_start) > max_runtime);
+    max_runtime = conf.relay_runtime * 1000; // calculate max runtime in ms
+    timeover = ((time_over_check - conf.relay_start) > max_runtime); // check time elapsed since pump relay turned on
 
     //Log.trace("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
-    
+
+    // if liquid level not ok or maxrelay runtime is over -> turn off relay now
     if(!LIQUID_LEVEL_OK || timeover)
     {      
       stopPump();
@@ -905,12 +919,10 @@ boolean isPumpRunningSim()
  */
 void setup() {
 
-  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP   
 
   Serial.begin(9600); 
-  Log.begin(LOG_LEVEL_NOTICE, &Serial);  
-  Log.notice("Serial initialize!" CR);
-  
+  Log.begin(LOG_LEVEL_TRACE, &Serial);  
+  Log.notice("Serial initialize!" CR);  
   queue.setPrinter (Serial); 
   
   // Check for reset and do reset routine
@@ -943,50 +955,81 @@ void setup() {
 
 
   /* WIFI */
+
+  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP   
     
-  char APNAME[NAME.length() + 1];
-  NAME.toCharArray(APNAME, NAME.length() + 1);  
-  wifiManager.setConfigPortalBlocking(false);
   wifiManager.setAPCallback(configModeCallback);
-  wifiManager.setConfigPortalTimeout(180);    
-  wifiManager.setConnectTimeout(120);
+  wifiManager.setConfigPortalTimeout(180);
 
 
   gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
   {
-    network = true;
-    Log.notice("Station connected ");
+    _connected = true;
+    Log.notice("Network connected ");
     Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
-    init_server();
+
+    // Start webserver
+    if(!webserver_inited){
+      init_server();
+    }
   });
+  
   
   disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected & event)
   {
-    network = false;
-    Log.notice("Station disconnected!");
+    _connected = false;
+    Log.notice("Network disconnected!" CR);
+
+    if(WiFi.status()== WL_CONNECTED)
+    {
+      Log.notice("WL_CONNECTED" CR);
+    }
+    else
+    {
+      Log.notice("WL_DISCONNECTED" CR);
+    }
+    
   });
 
+  
+  connect_network();
+}
 
 
+
+
+/**
+ * Attempt to connect to WIFI network
+ */
+void connect_network()
+{
   Log.notice("Attempting to connect to network using saved credentials" CR);  
   Log.notice("Connecting to WiFi..");
-    
-    
-  boolean wm_connected = wifiManager.autoConnect(APNAME, AP_PASS);
+  
+  _connecting = true;
+  
+  boolean wm_connected = wifiManager.autoConnect(NAME, AP_PASS);
   if(wm_connected)
   {
-    Serial.println("connected...yeey :)");
-    Log.notice("My IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
-    network = true;
+    Log.notice("connected...yeey :)");
+    Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+
+    _connecting = false;
+    _connected = true;
   }else
   {
-    Serial.println("Configportal running");
-    network = false;
+    Log.notice("Config portal running");
+    _connecting = false;
+    _connected = false;
   }
 }
 
 
 
+
+/**
+ * Initialize webserver @ port 80
+ */
 void init_server()
 {
   server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
@@ -1008,6 +1051,7 @@ void init_server()
   server->begin();
   
   Log.notice("HTTP server started!" CR);  
+  webserver_inited = true;
 }
 
 
@@ -1018,6 +1062,7 @@ void init_server()
  */
 void loop() 
 {
+    
     if(!inited){
         inited = true;
         initSettings();
@@ -1032,14 +1077,13 @@ void loop()
     else
     {
       relayConditionSafeGuard();
+      
       checkPumpRunningStatus();
       checkUnauthorizedRun();
       handleSystemFault();
-
-      dispatchPendingNotification();
-      invalidateUserRequest();
       
-      wifiManager.process();
+      dispatchPendingNotification();
+      invalidateUserRequest();  
 
       if((millis() - system_start_time > wait_time) && (WiFi.status()== WL_CONNECTED))
       {
