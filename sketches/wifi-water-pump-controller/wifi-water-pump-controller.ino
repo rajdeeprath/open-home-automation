@@ -517,14 +517,14 @@ void runPump()
       else
       {
         msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
-        Log.trace(msg CR);
+        Log.trace(msg);
         notifyURL(msg);
       }
    }
    else
    {
         msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
-        Log.trace(msg CR);
+        Log.trace(msg);
         notifyURL(msg);
    }
 }
@@ -590,7 +590,7 @@ void checkUnauthorizedRun()
         {
           systemFault = true;
           
-          Log.trace(msg CR);
+          Log.trace(msg);
           notifyURL(msg); 
         }
         else
@@ -620,7 +620,7 @@ void checkPumpRunningStatus(){
         lastPumpStopFeedbackTime = millis();
                 
         msg = "Pump stopped!";
-        Log.trace(msg CR);
+        Log.trace(msg);
         
         // notify status
         notifyURL(msg);
@@ -637,7 +637,7 @@ void checkPumpRunningStatus(){
           lastPumpStartFeedbackTime = millis();
         
           msg = "Pump running!";
-          Log.trace(msg CR);
+          Log.trace(msg);
 
           // notify status
           notifyURL(msg);
