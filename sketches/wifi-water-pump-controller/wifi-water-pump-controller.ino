@@ -781,7 +781,7 @@ void relayConditionSafeGuard()
   timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect; // how long was it since we have a open switch
   //Log.trace("timeSinceLastOpenSwitch = %l" + timeSinceLastOpenSwitch);  
   
-  if(switchOpen && timeSinceLastOpenSwitch >= 500) // if switch is open and it has been that way for more then 500m ms (normalising false values)
+  if(switchOpen && timeSinceLastOpenSwitch >= 1000) // if switch is open and it has been that way for more then 500m ms (normalising false values)
   {
     // if liquid level was ok, now mark it as not ok
     if(LIQUID_LEVEL_OK)
