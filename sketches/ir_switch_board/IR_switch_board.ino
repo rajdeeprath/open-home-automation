@@ -2,21 +2,22 @@
 #include <EEPROM.h>
 #include "Timer.h"
 
-//#define RELAY_POWER 10
 #define RELAY_1 5
 #define RELAY_2 6
 #define IR 8
 #define BEEPER 3
+#define PROG_INDICATOR 10
+#define TIMER_INDICATOR 11
 
 #define ONE "ff30cf"
 #define TWO "ff18e7"
 #define PROGRAM "ff906f"
 #define MINUS_ONE "ffe01f"
 #define PLUS_ONE "ffa857"
-
+#define CANCEL "ff6897"
 #define TIME_JUMP 10
 
-
+ 
 boolean RELAY_1_ON = false;
 boolean RELAY_2_ON = false;
 
@@ -37,13 +38,28 @@ decode_results results;
 
 String code;
 boolean PROGMODE = false;
+boolean PROG_INDICATOR_ON = false;
 int timer;
 long timer_time;
 int TIMER_TARGET;
+boolean HAS_TIMER_TARGET = false;
+boolean TIMER_INDICATOR_ON = false;
 int timerEvent;
-
 long lastKeyPress;
 long keyPressDelay;
+
+long beeperStartTime;
+long beepTimeDelay; // milliseconds
+boolean beepMode=false;
+int LONG_BEEP = 500;
+int SHORT_BEEP = 100;
+
+
+long blinkStartTime;
+long blinkTimeDelay; // milliseconds
+boolean blinkMode=false;
+int LONG_BLINK = 500;
+int SHORT_BLINK = 100;
 
 Timer t;
 
@@ -64,12 +80,11 @@ void setup()
   pinMode(RELAY_2, OUTPUT);
   digitalWrite(RELAY_2, HIGH);
 
-  // POWER UP RELAY
-  //pinMode(RELAY_POWER, OUTPUT);
-  //digitalWrite(RELAY_POWER, HIGH);  
-  
+ 
   pinMode(IR, INPUT);
   pinMode(BEEPER, OUTPUT);
+  pinMode(PROG_INDICATOR, OUTPUT);
+  pinMode(TIMER_INDICATOR, OUTPUT);
 
   irrecv.enableIRIn(); // Start the receiver
 
@@ -87,6 +102,7 @@ void setup()
 void loop() {
   t.update();
   readIR();
+  updateIndicators();
 }
 
 
@@ -104,17 +120,22 @@ void readIR()
       {
         if(PROGMODE)
         {
-          TIMER_TARGET = RELAY_1;
-          debugPrint(String("Timer target set to ... " + TIMER_TARGET));
-          PROGMODE = false;
-          startTimer(); 
+          if(timer > 0)
+          {
+            TIMER_TARGET = RELAY_1;
+            debugPrint(String("Timer target set to ... " + TIMER_TARGET));
+            PROGMODE = false;
+            startTimer(); 
+
+            beep();
+          }
         }
         else
         {
           toggleRelay(RELAY_1, RELAY_1_ON);
           conf.relay_1 = RELAY_1_ON;
           saveSettings();
-  
+
           beep();
         }
       }
@@ -122,17 +143,22 @@ void readIR()
       {
         if(PROGMODE)
         {
-          TIMER_TARGET = RELAY_2;
-          debugPrint(String("Timer target set to ... " + TIMER_TARGET));
-          PROGMODE = false;
-          startTimer();
+          if(timer > 0)
+          {
+            TIMER_TARGET = RELAY_2;
+            debugPrint(String("Timer target set to ... " + TIMER_TARGET));
+            PROGMODE = false;          
+            startTimer();
+
+            beep();
+          }
         }
         else
         {
           toggleRelay(RELAY_2, RELAY_2_ON);
           conf.relay_2 = RELAY_2_ON;
           saveSettings();
-  
+
           beep();
         }
       }
@@ -146,33 +172,42 @@ void readIR()
           }
   
           PROGMODE = true;
-          beep();
         }
         else
         {
           debugPrint("Exiting program mode...");
-          PROGMODE = false;
+          PROGMODE = false;          
           
           // discard timer if active
-          beep();
-          beep();
           clearTimer();
         }
+
+        beep();
       }
       else if(code == MINUS_ONE)
       {
-        if(timer > 0)
+        if(PROGMODE)
         {
-          timer = timer - TIME_JUMP; 
-          beep();
-          debugPrint(String(timer));
+          if(timer > 0)
+          {
+            timer = timer - TIME_JUMP; 
+            debugPrint(String(timer));
+
+            shortBlink();
+            beep();
+          }
         }
       }
       else if(code == PLUS_ONE)
       {
-         timer = timer + TIME_JUMP; 
-         beep();
-         debugPrint(String(timer));
+        if(PROGMODE)
+        {
+           timer = timer + TIME_JUMP; 
+           debugPrint(String(timer));
+
+           shortBlink();
+           beep();
+        }
       }
       
       lastKeyPress = millis();
@@ -183,6 +218,62 @@ void readIR()
 }
 
 
+void updateProgIndicator()
+{
+  if(PROGMODE)
+  {
+    if(!PROG_INDICATOR_ON)
+    {
+      digitalWrite(PROG_INDICATOR, HIGH);
+      PROG_INDICATOR_ON = true;
+    }
+  }
+  else
+  {
+    if(PROG_INDICATOR_ON)
+    {
+      digitalWrite(PROG_INDICATOR, LOW);
+      PROG_INDICATOR_ON = false;
+    }
+  }
+}
+
+
+
+
+void updateIndicators()
+{
+  updateBlinkerState();
+  updateBeeperState();  
+  updateTimerIndicator();
+  updateProgIndicator();
+}
+
+
+
+
+void updateTimerIndicator()
+{
+  if(HAS_TIMER_TARGET)
+  {
+    if(!TIMER_INDICATOR_ON)
+    {
+      digitalWrite(TIMER_INDICATOR, HIGH);
+      TIMER_INDICATOR_ON = true;
+    }
+  }
+  else
+  {
+    if(TIMER_INDICATOR_ON)
+    {
+      digitalWrite(TIMER_INDICATOR, LOW);
+      TIMER_INDICATOR_ON = false;
+    }
+  }
+}
+
+
+
 
 void clearTimer()
 {
@@ -191,8 +282,7 @@ void clearTimer()
  
    timer = 0;
    TIMER_TARGET = 0;
-
-   beep();
+   HAS_TIMER_TARGET = false;
    debugPrint("Existing timer stopped...");
 }
 
@@ -201,11 +291,13 @@ void startTimer()
 {
   // start timer
   t.stop(timerEvent);
+
+  if(TIMER_TARGET != 0){
+    HAS_TIMER_TARGET = true;
+  }
   
   timer_time = timer * 60000;
   timerEvent = t.after(timer_time, timerDone);
-
-  beep();
   debugPrint("New timer started...");
 }
 
@@ -223,14 +315,113 @@ void timerDone()
     toggleRelay(RELAY_2, RELAY_2_ON);
   } 
 
-  beep();
+  TIMER_TARGET = 0;
+  HAS_TIMER_TARGET = false;
+    
+  longBeep();
 }
+
+void updateBeeperState()
+{
+  if(beepMode)
+  {
+    debugPrint("Beepr is on checking when to turn off...");
+    
+    if(millis() - beeperStartTime > beepTimeDelay){
+      beeperOff();
+    }
+  }
+}
+
+
+void updateBlinkerState()
+{
+  if(blinkMode)
+  {
+    debugPrint("Blinker is on checking when to turn off...");
+    
+    if(millis() - blinkStartTime > blinkTimeDelay){
+      blinkerOff();
+    }
+  }
+}
+
 
 void beep()
 {
-  digitalWrite(BEEPER, HIGH);
-  delay(100);
-  digitalWrite(BEEPER, LOW);
+  beeperOff();
+  
+  beepTimeDelay = SHORT_BEEP;
+  beeperOn();
+}
+
+
+void shortBlink()
+{
+  blinkerOff();
+  
+  beepTimeDelay = SHORT_BLINK;
+  blinkerOn();
+}
+
+
+void longBeep()
+{
+  beeperOff();
+
+  beepTimeDelay = LONG_BEEP;
+  beeperOn();
+}
+
+
+void beeperOn()
+{  
+  if(!beepMode)
+  {
+    debugPrint("Turning beeper on");
+    
+    beepMode=true;
+    beeperStartTime = millis();
+    digitalWrite(BEEPER, HIGH);
+  }
+}
+
+
+void beeperOff()
+{
+  if(beepMode)
+  {
+    debugPrint("Turning beeper off");
+    
+    beepMode=false;
+    digitalWrite(BEEPER, LOW);
+  }
+}
+
+
+
+void blinkerOn()
+{  
+  if(!blinkMode)
+  {
+    debugPrint("Turning blinker on");
+    
+    blinkMode=true;
+    blinkStartTime = millis();
+    digitalWrite(TIMER_INDICATOR, HIGH);
+  }
+}
+
+
+void blinkerOff()
+{
+  if(blinkMode)
+  {
+    debugPrint("Turning blinker off");
+    
+    blinkMode=false;
+    digitalWrite(TIMER_INDICATOR, LOW);
+  }
 }
 
 
@@ -240,6 +431,7 @@ void saveSettings()
   conf.timestamp = millis();
   EEPROM.put(eeAddress, conf);
   debugPrint("Conf saved");
+
 
   //debugPrint(String(conf.relay_1));
   //debugPrint(String(conf.relay_2));
@@ -260,8 +452,9 @@ void readSettings()
 
 void eraseSettings()
 {
-  for (int i = 0; i < EEPROM.length(); i++)
+  for (int i = 0; i < EEPROM.length(); i++){
   EEPROM.write(i, 0);
+  }
 }
 
 void restoreSystem()
