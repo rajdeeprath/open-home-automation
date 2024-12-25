@@ -1,10 +1,12 @@
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
-#include "WiFiManager.h"         //https://github.com/tzapu/WiFiManager
+#include <WiFiManager.h>         //https://github.com/tzapu/WiFiManager
 #include <EEPROM.h>
 #include <ESP8266HTTPClient.h>
 #include <QueueArray.h>
+#include <ArduinoLog.h>
+#include <WiFiClient.h>
 
 #define RELAY1 4 
 #define RELAY2 5 
@@ -17,15 +19,21 @@
 
 #define NOTICE_LIMIT 5
 
-const String NAME="HMU-PC-001";
+const char* NAME="HMU-PC-001";
+const char* AP_PASS="iot@123!";
 
-float digital_adc_voltage;
+double digital_adc_voltage;
 float OP_VOLTAGE = 3.3;
 float MAX_VOLTAGE = 1023.0;
 long current_time;
 long lastOpenSwitchDetect;
 long timeSinceLastOpenSwitch;
+long adcLastReadTime;
 boolean switchOpen;
+boolean _connected = false;
+boolean _connecting = false;
+boolean webserver_inited = false;
+
 int DEFAULT_RUNTIME = 30;
 long max_runtime;
 long system_start_time;
@@ -40,6 +48,7 @@ String switch1state;
 boolean LIQUID_LEVEL_OK = true;
 boolean PUMP_CONNECTION_ON = false;
 boolean PUMP_RUN_REQUEST_TOKEN = false;
+String data;
 
 long last_notify = 0;
 long accidentGuardLastRun = 0;
@@ -52,7 +61,7 @@ boolean beeping;
 long lastPumpStartFeedbackTime;
 long lastPumpStopFeedbackTime;
 
-long INIT_DELAY = 15000;
+long INIT_DELAY = 20000;
 long CONSECUTIVE_NOTIFICATION_DELAY = 5000;
 long CONSECUTIVE_PUMP_RUN_DELAY = 15000;
 long OPERATION_FEEDBACK_CHECK_DELAY = 2000;
@@ -61,7 +70,7 @@ long ACCIDENT_GUARD_RUN_DELAY = 4000;
 long BEEPER_DELAY = 1500;
 long PUMP_CONNECTION_SENSOR_NOISE_THRESHOLD = 2000;
 
-String capailities = "{\"name\":\"" + NAME + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
+String CAPABILITIES = "{\"name\":\"" + String(NAME) + "\",\"devices\":{\"name\":\"Irrigation Pump Controller\",\"actions\":{\"getSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\"},\"toggleSwitch\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\"},\"setSwitchOn\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/on\"},\"setSwitchOff\":{\"method\":\"get\",\"path\":\"\/switch\/1\/set\/off\"}, \"getRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\"},\"setRuntime\":{\"method\":\"get\",\"path\":\"\/switch\/1\/runtime\",\"params\":[{\"name\":\"time\",\"type\":\"Number\",\"values\":\"60, 80, 100 etc\"}]}}},\"global\":{\"actions\":{\"getNotify\":{\"method\":\"get\",\"path\":\"\/notify\"},\"setNotify\":{\"method\":\"get\",\"path\":\"\/notify\/set\",\"params\":[{\"name\":\"notify\",\"type\":\"Number\",\"values\":\"1 or 0\"}]},\"getNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\"},\"setNotifyUrl\":{\"method\":\"get\",\"path\":\"\/notify\/url\/set\",\"params\":[{\"name\":\"url\",\"type\":\"String\",\"values\":\"http:\/\/google.com\"}]},\"reset\":\"\/reset\",\"info\":\"\/\"}}}";
 
 struct Settings {
    int relay;
@@ -93,10 +102,27 @@ QueueArray <Notification> queue;
 Settings conf = {};
 
 WiFiManager wifiManager;
+WiFiEventHandler gotIpEventHandler, disconnectedEventHandler;
 std::unique_ptr<ESP8266WebServer> server;
 
 HTTPClient http;
+WiFiClient wifiClient;
+
 boolean posting;
+
+
+
+
+/**
+ * Gets called when config portal is running
+ */
+
+void configModeCallback (WiFiManager *myWiFiManager) 
+{
+  Log.trace("Inside configModeCallback" CR);
+  Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.softAPIP()[0],  WiFi.softAPIP()[1], WiFi.softAPIP()[2], WiFi.softAPIP()[3]);
+  Log.notice("ConfigPortalSSID => %s" CR, myWiFiManager->getConfigPortalSSID());
+}
 
 
 
@@ -105,8 +131,10 @@ boolean posting;
  * Handle root visit
  */
 void handleRoot() {
-  server->send(200, "application/json", capailities);
+  Log.trace("handleRoot called" CR);
+  server->send(200, "application/json", CAPABILITIES);
 }
+
 
 
 
@@ -394,7 +422,7 @@ void setNotifyURL()
  */
 void notifyURL(String message)
 {
-  //debugPrint("Preparing notification");
+  Log.trace("Preparing notification" CR);
   
   Notification notice = {};
   notice.relay = conf.relay;
@@ -415,9 +443,24 @@ void enqueueNotification(struct Notification notice)
    notice.queue_time = millis();
 
    if(queue.count() < NOTICE_LIMIT){
-    //debugPrint("Pushing notification to queue");
+    Log.trace("Pushing notification to queue" CR);
     queue.enqueue(notice);
    }
+}
+
+
+
+String getPostNotificationString(Notification &notice)
+{
+      String post = "";
+      post += "pump=" + String(notice.relay);
+      post += "&run_time" + String(notice.relay_runtime); 
+      post += "&relay_start" + String(notice.relay_start); 
+      post += "&relay_stop" + String(notice.relay_stop); 
+      post += "&queue_time=" + String(notice.queue_time); 
+      post += "&send_time=" + String(notice.send_time); 
+      post += "&message=" + String(notice.message);
+      return post;
 }
 
 
@@ -432,20 +475,21 @@ void dispatchPendingNotification()
   {    
     if (!posting && conf.notify == 1 && !queue.isEmpty())
     {
-      //debugPrint("Running Notification service");
-
-      //debugPrint("Popping notification from queue. Current size = " + String( queue.count()));
+      Log.trace("Running Notification service" CR);
+      Log.trace("Popping notification from queue. Current size = %d" CR, queue.count());
+      
       Notification notice = queue.dequeue();
-      notice.send_time = millis();
-  
+      notice.send_time = millis();  
       posting = true;
-  
-      http.begin(String(conf.endpoint));
+        
+      data = getPostNotificationString(notice);
+
+      http.begin(wifiClient, conf.endpoint);
       http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  
-      int httpCode = http.POST("pump=" + String(notice.relay) + "&run_time" + String(notice.relay_runtime) + "&relay_start" + String(notice.relay_start) + "&relay_stop" + String(notice.relay_stop) + "&queue_time=" + String(notice.queue_time) + "&send_time=" + String(notice.send_time) +   "&message=" + notice.message);
-      //debugPrint(String(httpCode));
-  
+      http.addHeader("Host", "iot.flashvisions.com");
+      http.addHeader("Content-Length", String(data.length()));
+      int httpResponseCode = http.POST(data); 
+      Log.notice("HTTP Response code: %d" CR, httpResponseCode);
       http.end();
   
       posting = false;
@@ -461,26 +505,26 @@ void dispatchPendingNotification()
  */
 void runPump()
 {
-   String msg;
-
+  const char* msg;
+  
    if(conf.relay == 0)
    {
       if(millis() - conf.relay_start > CONSECUTIVE_PUMP_RUN_DELAY)
       {
-        debugPrint("Starting pump!");
+        Log.trace("Starting pump!" CR);
         switchOnCompositeRelay();
       }
       else
       {
         msg = "Pump was last run very recently. It cannot be run consecutively. Try after some time!";
-        debugPrint(msg);
+        Log.trace(msg);
         notifyURL(msg);
       }
    }
    else
    {
         msg = "Pump cannot be started now as it was already started or is still running and has not stopped automatically!";
-        debugPrint(msg);
+        Log.trace(msg);
         notifyURL(msg);
    }
 }
@@ -494,7 +538,7 @@ void stopPump()
 {
   if(conf.relay == 1)
   { 
-    debugPrint("Stopping pump!");
+    Log.trace("Stopping pump!" CR);
     switchOffCompositeRelay();
   }
 }
@@ -506,7 +550,7 @@ void stopPump()
  */
 void checkUnauthorizedRun()
 {
-    String msg;
+    const char* msg;
     boolean RED_FLAG;
     long lastRunElapsedTime = (millis() - conf.relay_start);
     long lastStopElapsedTime = (millis() - conf.relay_stop);
@@ -517,7 +561,7 @@ void checkUnauthorizedRun()
         /* Check for possible fault */    
         if(!PUMP_RUN_REQUEST_TOKEN)
         {
-          //debugPrint("Running accident prevention & warning routine checks!!");         
+          //Log.trace("Running accident prevention & warning routine checks!!");         
           
           if(PUMP_CONNECTION_ON) // Check feedback
           {
@@ -546,7 +590,7 @@ void checkUnauthorizedRun()
         {
           systemFault = true;
           
-          debugPrint(msg);      
+          Log.trace(msg);
           notifyURL(msg); 
         }
         else
@@ -566,7 +610,7 @@ void checkUnauthorizedRun()
  */
 void checkPumpRunningStatus(){
 
-    String msg;
+    const char* msg;
     
     if(!isPumpRunning())
     {
@@ -576,7 +620,7 @@ void checkPumpRunningStatus(){
         lastPumpStopFeedbackTime = millis();
                 
         msg = "Pump stopped!";
-        debugPrint(msg);
+        Log.trace(msg);
         
         // notify status
         notifyURL(msg);
@@ -593,7 +637,7 @@ void checkPumpRunningStatus(){
           lastPumpStartFeedbackTime = millis();
         
           msg = "Pump running!";
-          debugPrint(msg);
+          Log.trace(msg);
 
           // notify status
           notifyURL(msg);
@@ -697,62 +741,77 @@ void checkAndRespondToRelayConditionSafeGuard()
  */
 void relayConditionSafeGuard()
 {
-  liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
-  digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);  
   current_time = millis();
+
+  if(current_time - adcLastReadTime < 100){
+    return;
+  }
   
-  //debugPrint("Analog Voltage = " + String(liquidLevelSensorReadIn) + "  Digital Voltage= " + String(digital_adc_voltage));
- 
+  // read in liquid level from ADC
+  liquidLevelSensorReadIn = analogRead(LIQUID_LEVEL_SENSOR);
+  adcLastReadTime = current_time;
+
+  // calculate digital voltage
+  digital_adc_voltage = liquidLevelSensorReadIn * (OP_VOLTAGE / MAX_VOLTAGE);  
+  //Log.trace("Analog Voltage = %d, Digital Voltage = %D" CR, liquidLevelSensorReadIn, digital_adc_voltage);  
+
+  // if digital voltage greater than 2.7 take action ->
   if(digital_adc_voltage >= 2.7)
   {
+    // if switch was not open then it is opened now
     if(!switchOpen)
     {
-      switchOpen = true;
-      lastOpenSwitchDetect = current_time;
-      debugPrint("switch open");   
+      switchOpen = true; // mark switch as open
+      lastOpenSwitchDetect = current_time; // remember the time when it was opened
+      Log.trace("switch open" CR);   
     }
   }
-  else
+  else // if digital voltage is less then 2.7 take action ->
   {
+    // if switch was open then mark it as closed now
     if(switchOpen)
     {
-      switchOpen = false;
-      lastOpenSwitchDetect = current_time + 1000; // forward into future
-      debugPrint("switch closed");
+      switchOpen = false; // mark switch as closed
+      lastOpenSwitchDetect = current_time + 1000; // forward last open time into future to fool `timeSinceLastOpenSwitch`
+      Log.trace("switch closed" CR);
     }
   }
 
-  timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect;
-  //debugPrint("timeSinceLastOpenSwitch " + String(timeSinceLastOpenSwitch));
+
+  timeSinceLastOpenSwitch = current_time - lastOpenSwitchDetect; // how long was it since we have a open switch
+  //Log.trace("timeSinceLastOpenSwitch = %l" + timeSinceLastOpenSwitch);  
   
-  if(switchOpen && timeSinceLastOpenSwitch >= 500) // open magnetic switch for 1 whole second
+  if(switchOpen && timeSinceLastOpenSwitch >= 1000) // if switch is open and it has been that way for more then 500m ms (normalising false values)
   {
+    // if liquid level was ok, now mark it as not ok
     if(LIQUID_LEVEL_OK)
     {
-      ledOn();
-      LIQUID_LEVEL_OK = false;
+      ledOn(); // turn on indicator
+      LIQUID_LEVEL_OK = false; // liquid level not ok
     } 
   }
-  else // closed magnetic switch
+  else // if switch is closed
   {
+    // if liquid level was not ok, now mark it as ok
     if(!LIQUID_LEVEL_OK)
     {
-      ledOff();
-      LIQUID_LEVEL_OK = true;
+      ledOff(); // turn off indicator
+      LIQUID_LEVEL_OK = true; // liquid level ok
     }
   }
 
 
   /****************************************************************/
-  time_over_check = millis();
 
+  // if relay was on check if it should be autoclosed now
   if(conf.relay == 1)
   {
-    max_runtime = conf.relay_runtime * 1000;
-    timeover = ((time_over_check - conf.relay_start) > max_runtime);
+    max_runtime = conf.relay_runtime * 1000; // calculate max runtime in ms
+    timeover = ((current_time - conf.relay_start) > max_runtime); // check time elapsed since pump relay turned on
 
-    //debugPrint("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
-    
+    //Log.trace("elapsed runtime time = " + String((time_over_check - conf.relay_start)));
+
+    // if liquid level not ok or maxrelay runtime is over -> turn off relay now
     if(!LIQUID_LEVEL_OK || timeover)
     {      
       stopPump();
@@ -767,7 +826,7 @@ void relayConditionSafeGuard()
  */
 void switchOffCompositeRelay()
 {
-    debugPrint("Turning off control pins");
+    Log.trace("Turning off control pins" CR);
     
     conf.relay=0;
     conf.relay_stop = millis();
@@ -782,7 +841,7 @@ void switchOffCompositeRelay()
  */
 void switchOnCompositeRelay()
 {
-    debugPrint("Turning on control pins");
+    Log.trace("Turning on control pins" CR);
   
     conf.relay=1;
     conf.relay_start = millis();    
@@ -864,13 +923,17 @@ boolean isPumpRunningSim()
  */
 void setup() {
 
+
   Serial.begin(9600); 
+  Log.begin(LOG_LEVEL_TRACE, &Serial);  
+  Log.notice("Serial initialize!" CR);  
+  
   queue.setPrinter (Serial); 
   
   // Check for reset and do reset routine
   readSettings();  
   if(conf.reset == 1){
-    debugPrint("Reset flag detected!");    
+    Log.trace("Reset flag detected!" CR);
     doReset();
   }
 
@@ -893,17 +956,88 @@ void setup() {
   pinMode(RELAY1_READER, INPUT);
   pinMode(RELAY2_READER, INPUT);
   pinMode(LIQUID_LEVEL_SENSOR, INPUT);
+  pinMode(PUMP_SENSOR, INPUT);  
 
-  pinMode(PUMP_SENSOR, INPUT);
+
+  /* WIFI */
+
+  WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP   
+    
+  wifiManager.setAPCallback(configModeCallback);
+  wifiManager.setConfigPortalTimeout(120);
+  wifiManager.setConfigPortalBlocking(false);
 
 
-  char APNAME[NAME.length() + 1];
-  NAME.toCharArray(APNAME, NAME.length() + 1);
-  wifiManager.autoConnect(APNAME, "iot@123!");
+  gotIpEventHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP & event)
+  {
+    _connected = true;
+    Log.notice("Network connected ");
+    Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
 
-  //if you get here you have connected to the WiFi
-  debugPrint("connected...yeey :)");
+    // Start webserver
+    if(!webserver_inited){
+      init_server();
+    }
+  });
   
+  
+  disconnectedEventHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected & event)
+  {
+    _connected = false;
+    Log.notice("Network disconnected!" CR);
+
+    if(WiFi.status()== WL_CONNECTED)
+    {
+      Log.notice("WL_CONNECTED" CR);
+    }
+    else
+    {
+      Log.notice("WL_DISCONNECTED" CR);
+    }
+    
+  });
+
+  
+  connect_network();
+}
+
+
+
+
+/**
+ * Attempt to connect to WIFI network
+ */
+void connect_network()
+{
+  Log.notice("Attempting to connect to network using saved credentials" CR);  
+  Log.notice("Connecting to WiFi..");
+  
+  _connecting = true;
+  
+  boolean wm_connected = wifiManager.autoConnect(NAME, AP_PASS);
+  if(wm_connected)
+  {
+    Log.notice("connected...yeey :)");
+    Log.notice("IP address: : %d.%d.%d.%d" CR, WiFi.localIP()[0],  WiFi.localIP()[1], WiFi.localIP()[2], WiFi.localIP()[3]);
+
+    _connecting = false;
+    _connected = true;
+  }else
+  {
+    Log.notice("Config portal running");
+    _connecting = false;
+    _connected = false;
+  }
+}
+
+
+
+
+/**
+ * Initialize webserver @ port 80
+ */
+void init_server()
+{
   server.reset(new ESP8266WebServer(WiFi.localIP(), 80));
 
   server->on("/", handleRoot);
@@ -922,8 +1056,8 @@ void setup() {
   server->onNotFound(handleNotFound);
   server->begin();
   
-  debugPrint("HTTP server started");
-  debugPrint(String(WiFi.localIP()));
+  Log.notice("HTTP server started!" CR);  
+  webserver_inited = true;
 }
 
 
@@ -934,12 +1068,13 @@ void setup() {
  */
 void loop() 
 {
+    wifiManager.process();
+    
     if(!inited){
         inited = true;
         initSettings();
     }
-
-    
+   
 
     if (conf.reset == 1)
     {
@@ -949,16 +1084,15 @@ void loop()
     else
     {
       relayConditionSafeGuard();
+      
       checkPumpRunningStatus();
       checkUnauthorizedRun();
       handleSystemFault();
-
-      dispatchPendingNotification();
-      invalidateUserRequest();
       
-      delay(3);
+      dispatchPendingNotification();
+      invalidateUserRequest();  
 
-      if(millis() - system_start_time > wait_time)
+      if((millis() - system_start_time > wait_time) && (WiFi.status()== WL_CONNECTED))
       {
         server->handleClient();
       }
@@ -1017,7 +1151,7 @@ void initSettings()
 
   if(conf.relay_runtime <= 0)
   {
-    debugPrint("Setting defaults");
+    Log.trace("Setting defaults" CR);
     
     String url = "0.0.0.0";
     char tmp[url.length() + 1];
@@ -1046,6 +1180,33 @@ void initSettings()
 
 
 
+void set_defaults()
+{  
+  Log.trace("Setting defaults" CR);
+  
+  String url = "0.0.0.0";
+  char tmp[url.length() + 1];
+  url.toCharArray(tmp, url.length() + 1);
+
+  conf.endpoint_length = url.length();
+  memset(conf.endpoint, 0, sizeof(conf.endpoint));
+  strncpy(conf.endpoint, tmp, strlen(tmp));
+  
+  conf.notify = 0;
+  conf.relay_runtime = DEFAULT_RUNTIME;
+
+  system_start_time = millis();
+  conf.relay=0;
+  conf.led=1;
+  conf.lastupdate = 0;
+  conf.relay_start = 0;
+  conf.relay_stop = 0;
+
+  writeSettings();
+}
+
+
+
 
 /**
  * Erases eeprom of all settings
@@ -1054,7 +1215,7 @@ void eraseSettings()
 {
   EEPROM.begin(512);
   
-  debugPrint("Erasing eeprom...");
+  Log.trace("Erasing eeprom..." CR);
   
   for (int i = 0; i < 512; i++){
     EEPROM.write(i, 0);
@@ -1099,20 +1260,19 @@ void writeSettings()
   writeEEPROM(eeAddress, conf.endpoint_length, conf.endpoint);
 
   EEPROM.commit();
-
   EEPROM.end();
   
-  debugPrint("Conf saved");
-  debugPrint(String(conf.relay));
-  debugPrint(String(conf.relay_runtime));
-  debugPrint(String(conf.led));
-  debugPrint(String(conf.lastupdate));
-  debugPrint(String(conf.relay_start));
-  debugPrint(String(conf.relay_stop));
-  debugPrint(String(conf.reset));
-  debugPrint(String(conf.notify));
-  debugPrint(String(conf.endpoint_length));
-  debugPrint(String(conf.endpoint));;
+  Log.trace("Conf saved" CR);
+  Log.trace("relay => %d" CR, conf.relay);
+  Log.trace("relay_runtime => %d" CR, conf.relay_runtime);
+  Log.trace("led => %d" CR, conf.led);
+  Log.trace("lastupdate => %l" CR, conf.lastupdate);
+  Log.trace("relay_start => %l" CR, conf.relay_start);
+  Log.trace("relay_stop=> %l" CR, conf.relay_stop);
+  Log.trace("reset => %d" CR, conf.reset);
+  Log.trace("notify => %d" CR, conf.notify);
+  Log.trace("endpoint_length => %d" CR, conf.endpoint_length);
+  Log.trace("endpoint_length => %s" CR, conf.endpoint);
 }
 
 
@@ -1161,17 +1321,17 @@ void readSettings()
 
   EEPROM.end();
 
-  debugPrint("Conf read");
-  debugPrint(String(conf.relay));
-  debugPrint(String(conf.relay_runtime));
-  debugPrint(String(conf.led));
-  debugPrint(String(conf.lastupdate));
-  debugPrint(String(conf.relay_start));
-  debugPrint(String(conf.relay_stop));
-  debugPrint(String(conf.reset));
-  debugPrint(String(conf.notify));
-  debugPrint(String(conf.endpoint_length));
-  debugPrint(String(conf.endpoint));  
+  Log.trace("Conf read" CR);
+  Log.trace("relay => %d" CR, conf.relay);
+  Log.trace("relay_runtime => %d" CR, conf.relay_runtime);
+  Log.trace("led => %d" CR, conf.led);
+  Log.trace("lastupdate => %l" CR, conf.lastupdate);
+  Log.trace("relay_start => %l" CR, conf.relay_start);
+  Log.trace("relay_stop=> %l" CR, conf.relay_stop);
+  Log.trace("reset => %d" CR, conf.reset);
+  Log.trace("notify => %d" CR, conf.notify);
+  Log.trace("endpoint_length => %d" CR, conf.endpoint_length);
+  Log.trace("endpoint_length => %s" CR, conf.endpoint);
 }
 
 
@@ -1185,18 +1345,3 @@ void readEEPROM(int startAdr, int maxLength, char* dest) {
     dest[i] = char(EEPROM.read(startAdr + i));
   }
 }
-
-
-
-
-/**
- * Prints message to serial
- */
-void debugPrint(String message){
-  if(debug){
-    Serial.println(message);
-  }
-}
-
-
-
